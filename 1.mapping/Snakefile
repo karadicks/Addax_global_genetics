@@ -1,0 +1,105 @@
+# Snakefile for reference-based SNP ID from ddRAD data
+# 2020.06.24
+# Kara Dicks - RZSS WildGenes
+
+#~~~~~~~~~~ UNDER DEVELOPMENT~~~~~~~~~~~~~~~~~~#
+
+# Setup:
+# The setup step makes a symlinks to the demultiplexed data and reference data. If Snakemake is restarted this will run again each time, so the "|| true" part of the command prevents Snakemake from exiting with an error if the links are already present.
+
+
+shell("ln -v -snt . /exports/eddie/scratch/$USER/ddRAD_demux || true")
+shell("ln -v -snt . /exports/eddie/scratch/$USER/ref_genome || true")
+
+
+configfile: "config.yml"
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ RULES are below
+
+
+#~ This rule defines the output files
+
+rule all:
+    input:
+        expand("1.mapped/{sample}_sorted.bam", sample=config["samples"]),
+        "1.mapped/flagstats_all.txt"
+
+#~ All rules below run the pipeline
+
+location=config["location"]
+
+rule bwa_map:
+    input:
+        ref=expand("{ref}", ref=config["ref_genome"]),
+        R1=location+"{sample}.1.fq.gz",
+        R2=location+"{sample}.2.fq.gz"
+    output: 
+        temp("1.mapped/{sample}_mapped.bam")
+    conda: "envs/bwa_mapping.yml"
+    log:
+        "logs/bwa_mem/{sample}.log"
+    benchmark:
+        "benchmarks/{sample}.bwa.benchmark.txt"
+    threads:
+        2
+    resources: 
+        mem="4G",
+        time="06:00:00"
+    params:
+        loc=config["location"]
+    shell:
+        r"""
+        (bwa mem -t {threads} {input.ref} {input.R1} {input.R2} | samtools view -bF 4 - > {output}) 2> {log}
+        """
+
+rule picard:
+    input: 
+        "1.mapped/{sample}_mapped.bam"
+    output: 
+        "1.mapped/{sample}_sorted.bam"
+    conda: "envs/bwa_mapping.yml"
+    threads:
+        2
+    resources: 
+        mem="4G",
+        time="00:45:00"
+    log:
+        "logs/picard/{sample}.log"
+    shell:
+        r"""
+        picard SortSam I={input} O={output} SORT_ORDER=coordinate TMP_DIR=temp/ 2> {log}
+        """
+
+rule sam_flag:
+    input:
+        "1.mapped/{sample}_sorted.bam"
+    output:
+        temp("1.mapped/{sample}_sorted_flagstat.txt")
+    conda: "envs/bwa_mapping.yml"
+    threads:
+        1
+    resources: 
+        mem="1G",
+        time="00:15:00"
+    log:
+        "logs/picard/{sample}_flag.log"
+    shell:
+        r"""
+        samtools flagstat {input} > {output}
+        """
+
+rule flagstats:
+    input:
+        expand("1.mapped/{sample}_sorted_flagstat.txt",sample=config["samples"])
+    output:
+        "1.mapped/flagstats_all.txt"
+    threads:
+        1
+    resources: 
+        mem="4G",
+        time="00:15:00"
+    shell:
+        r"""
+        grep -H "total" {input} | cut -d" " -f1 | sed "s/:/\t/" | sed "s/1.mapped\\///" | sed "s/_sorted_flagstat.txt//" >> {output}
+        """

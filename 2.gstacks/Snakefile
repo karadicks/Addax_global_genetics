@@ -1,0 +1,94 @@
+# Snakefile for SNP calling from ddRAD data which has ALREADY been mapped. 
+# @KaraDicks Created:2020_07_03
+
+# This snakemake pipeline was written to follow ddRAD_ref_STACKS pipeline, which uses BWA to map the demultiplexed data against your chosen reference genome. It is designed for use on Illumina data. No SNP QC is performed within this pipeline. 
+
+# **NOTE**: You should not need to adjust this SNAKEFILE if you wish to adjust the parameters. It is the config.yml you want. 
+
+
+    #~~ A hand selected list of individuals must be created manually to ensure you consider what animals are included in the analisis, and whether you have permission to use the data (consider Nagoya/ABS, sample & data ownership, etc).  
+
+    #~~ Note that repeat samples are included at this stage and therefore contribute to the SNP calling. If you subsequently identify substantial concerns with any of the repeat samples, it may be sensible to begin this pipeline again after resolving the problem (remove the individuals, correct the barcoding, etc.)
+
+
+# Process:
+# 1. Run gstacks to call SNPs
+
+# 2. Run populations to export SNPs
+
+    #~~ this pipeline will export either the first SNP (typically preferred), the haplotype or a random SNP. 
+
+    #~~ You can export the SNPs in a variety of formats (as per the STACKS populations module), including vcf, structure, and plink
+
+    #~~ The template config.yml will export the first SNP in vcf format 
+
+    #~~ To select different options, adjust the parameters in the config.yml file. 
+
+    #~~ Note, the popmap can differ from that used in gstacks, by defining a different popmap in the config.yml
+
+
+
+
+
+#~~~~~~~~~~~~~~ Importing configuration files ~~~~~~~~~~~~~~#
+
+configfile: "config.yml"
+
+#~~~~~~~~~~~~~~ Build rule ~~~~~~~~~~~~~~#
+## all: specifies the output files desired from this pipeline. 
+rule all:
+    input:
+        "1.gstacks/gstacks_pipeline.log",
+        "2.populations/populations_pipeline.log"
+
+
+#~~~~~~~~~~~~~~ Gstacks rules ~~~~~~~~~~~~~~#
+
+## gstacks: Runs the STACKS module (v2 onwards) gstacks to call snps
+rule gstacks:
+    input:
+        config["pop_select"]
+    output:
+        out_log="1.gstacks/gstacks_pipeline.log",
+        cat="1.gstacks/catalog.fa.gz"
+    params:
+        suffix=config["suffix"],
+        loc=config["loc_map_files"]
+    conda:
+        "envs/stacks2.52.yml"
+    benchmark:
+        "benchmarks/gstacks.benchmark.txt"
+    threads:
+        2
+    resources: 
+        mem="64G",
+        time="12:00:00"
+    shell:
+        r"""
+        gstacks -I {params.loc} -S {params.suffix} -M {input} -O 1.gstacks -t {threads} &> {output.out_log}
+        """
+
+
+#~~~~~~~~~~~~~~ populations rule ~~~~~~~~~~~~~~#
+
+## populations: Runs the STACKS module populations to export SNPs 
+rule populations:
+    input:
+        cat="1.gstacks/catalog.fa.gz",
+        popmap=config["pop_select"]
+    output:
+        "2.populations/populations_pipeline.log"
+    params:
+        snp_out=config["pop_snp_output"],
+        out_format=config["pop_output_format"]
+    conda:
+        "envs/stacks2.52.yml"
+    threads:
+        2
+    resources: 
+        mem="16G",
+        time="04:00:00"
+    shell:
+        r"""
+        populations -P ./1.gstacks -O ./2.populations -M {input.popmap} -t {threads} {params.snp_out} {params.out_format} &> {output}
+        """

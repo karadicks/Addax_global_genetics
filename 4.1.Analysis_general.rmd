@@ -1,0 +1,1496 @@
+---
+title: "WG1705 - Analysis general"
+author: "Kara Dicks"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::downcute:
+    self_contained: true
+    toc_depth: 4
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r options, echo=F, message = F, warning = F}
+library(knitr)
+library(rmdformats)
+
+## Global options
+opts_chunk$set(comment=NA, 
+                      prompt=FALSE,
+                      tidy=TRUE,
+                      fig.width=6, 
+                      fig.height=6, 
+                      echo=T,
+                      eval=T, 
+                      warning=FALSE, 
+                      message=F)
+opts_knit$set(width=75)
+
+# Always load
+library(tidyverse)
+library(patchwork)
+library(data.table)
+
+
+# ggplot
+library(ggthemr)
+library(patchwork)
+ggthemr(palette = "pale", layout = "clean", 
+        line_weight = 0.7, text_size = 12, type = "outer")
+library(cowplot)
+library(rcartocolor)
+library(ggrepel)
+
+
+library(adegenet)
+library(hierfstat)
+library(dartR)
+
+
+# Kara
+susbet <- subset
+
+source("scripts/basic_stats_sum.R")
+
+
+# create a colour palette for use throughout
+
+cols_all <- 
+  data.frame(Pop = c("AAZ",
+"AZA",
+"EAD",
+"EEP",
+"TUNISIA",
+"HNP",
+"JNP",
+"SJNP"),
+colours= c(
+"#977398",
+"#CCC591",
+"#798E87",
+"#C27D38",
+"#306489",
+"#008B8B",
+"#1E90FF",
+"#18186F"
+), 
+rename = c(
+"AAZ",
+"SSP",
+"EAD",
+"EEP",
+"Tunisia",
+"HNP",
+"JNP",
+"SJNP"
+))
+
+ggCols <- cols_all$colours
+names(ggCols) <- cols_all$Pop
+
+ggCols2 <- cols_all$colours
+names(ggCols2) <- cols_all$rename
+
+
+# read in population files
+pops <- fread("metadata/ADX_samples_populations_NewIDs.csv") %>% 
+  mutate(INDV = IID)
+
+# 330 samples mapped, 315 individuals included in stacks output.
+
+```
+
+
+
+```{r, eval=F}
+#Decision to exclude the single post-mortem sample in Tunisia, so generate new input files:
+dir.create("4.analysis/1.Input_files")
+dir.create("4.analysis/2.output_files/1.basic_sum_stats", 
+           recursive = TRUE)
+
+write.table("TUNISIA\tADX258_37\nTUNISIA\tADX259_37",
+            "4.analysis/1.Input_files/Exclude_IID_Tun_post_mortem.txt",
+            row.names=F, col.names=F, quote=F, sep="\t")
+
+#~ First the geno 50 files
+system("cmd", input=paste0("plink --file 3.SNP_QC/5.exclSex23/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.ld.excl23 --aec --remove  4.analysis/1.Input_files/Exclude_IID_Tun_post_mortem.txt --missing --recode --out 4.analysis/1.Input_files/ADX_geno50")) # 276 individuals + 4010 SNPs
+
+system("cmd", input=paste0("plink --file 4.analysis/1.Input_files/ADX_geno50 --aec --recode A --out 4.analysis/1.Input_files/ADX_geno50"))
+
+#~ Next the geno 95 files
+system("cmd", input=paste0("plink --file 3.SNP_QC/6.Geno95/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.ld.excl23.geno95 --aec --remove  4.analysis/1.Input_files/Exclude_IID_Tun_post_mortem.txt --recode --out 4.analysis/1.Input_files/ADX_geno95")) # 276 individuals + 1704 SNPs
+
+system("cmd", input=paste0("plink --file 4.analysis/1.Input_files/ADX_geno95 --aec --recode A --out 4.analysis/1.Input_files/ADX_geno95")) 
+
+
+################################################################
+# ~ Now create versions with the Tunisian NPs.
+
+#~ Geno50
+fread("4.analysis/1.Input_files/ADX_geno50.ped") %>% 
+  rename(FID = V1, IID = V2) %>% 
+  left_join(select(pops, IID, Pop_NP)) %>%
+  select(-FID) %>% 
+  select(Pop_NP, IID, everything()) %>% 
+  write.table("4.analysis/1.Input_files/ADX_geno50_TunNP.ped",
+              col.names=F, row.names=F, quote=F, sep="\t")
+
+
+file.copy("4.analysis/1.Input_files/ADX_geno50.map",
+          "4.analysis/1.Input_files/ADX_geno50_TunNP.map")
+
+system("cmd", input=paste0("plink --file 4.analysis/1.Input_files/ADX_geno50_TunNP --aec --recode A --out 4.analysis/1.Input_files/ADX_geno50_TunNP")) 
+
+
+#~Geno95
+fread("4.analysis/1.Input_files/ADX_geno95.ped") %>% 
+ # select(V1, V2) %>% 
+  rename(FID = V1, IID = V2) %>% 
+  left_join(select(pops, IID, Pop_NP)) %>%
+  select(-FID) %>% 
+  select(Pop_NP, IID, everything()) %>% 
+  write.table("4.analysis/1.Input_files/ADX_geno95_TunNP.ped",
+              col.names=F, row.names=F, quote=F, sep="\t")
+
+
+file.copy("4.analysis/1.Input_files/ADX_geno95.map",
+          "4.analysis/1.Input_files/ADX_geno95_TunNP.map")
+
+system("cmd", input=paste0("plink --file 4.analysis/1.Input_files/ADX_geno95_TunNP --aec --recode A --out 4.analysis/1.Input_files/ADX_geno95_TunNP")) 
+
+```
+
+# Population statistics
+
+Across population statistics are calculated using the 95% genotyped SNP set (`r fread("4.analysis/1.Input_files/ADX_geno95.map") %>% nrow()`).
+
+## Samples summary table
+
+Summarise the number of individuals in each population:
+
+```{r}
+Pop_sizes <- 
+  fread("4.analysis/1.Input_files/ADX_geno95.ped") %>%
+  group_by(V1) %>% 
+  rename(Population = V1) %>% 
+  count()
+
+Pop_sizes %>% 
+  kable(caption = "Sample sizes in each population defined in the genotype file")
+
+Pop_sizes_NP <- 
+  fread("4.analysis/1.Input_files/ADX_geno95_TunNP.ped") %>%
+  group_by(V1) %>% 
+  rename(Population = V1) %>% 
+  count()
+
+Pop_sizes_NP %>% 
+  kable(caption = "Sample sizes in each population defined in the genotype file separating the Tunisian metapopulation into individuals parks")
+```
+
+
+## Basic population statistics
+
+```{r}
+genInd_0.05 <- read.PLINK("4.analysis/1.Input_files/ADX_geno95.raw", parallel=F, quiet=T) %>% 
+  dartR::gl2gi() %>% 
+  hierfstat::genind2hierfstat()
+```
+
+
+```{r, eval=F}
+simple_summ <- basic.stats(genInd_0.05)
+
+write.table(simple_summ$Ho,
+            "4.analysis/2.output_files/1.basic_sum_stats/Raw_Ho_TUN.txt",
+            row.names=F, sep="\t")
+
+write.table(simple_summ$Hs,
+            "4.analysis/2.output_files/1.basic_sum_stats/Raw_Hs_TUN.txt",
+            row.names=F, sep="\t")
+
+write.table(simple_summ$Fis,
+            "4.analysis/2.output_files/1.basic_sum_stats/Raw_Fis_TUN.txt",
+            row.names=F, sep="\t")
+
+
+write.table(simple_summ$perloc,
+            "4.analysis/2.output_files/1.basic_sum_stats/Raw_PerLocus_TUN.txt",
+            row.names=F, sep="\t")
+
+per_loc <- simple_summ$perloc
+```
+
+
+```{r, eval=F}
+summ_0.05 <- basic_stats_summary(genInd_0.05)
+
+write.table(summ_0.05, 
+            "4.analysis/2.output_files/1.basic_sum_stats/basic_stats_TUN.txt",
+            sep="\t", row.names=F, quote=F)
+```
+
+```{r, eval=F}
+
+genInd_NP_0.05 <- read.PLINK("4.analysis/1.Input_files/ADX_geno95_TunNP.raw", parallel=F, quiet=T) %>% 
+  dartR::gl2gi() %>% 
+  hierfstat::genind2hierfstat()
+
+summ_NP_0.05 <- basic_stats_summary(genInd_NP_0.05)
+
+write.table(summ_NP_0.05, 
+            "4.analysis/2.output_files/1.basic_sum_stats/basic_stats_TunNP.txt",
+            sep="\t", row.names=F, quote=F)
+```
+
+
+```{r}
+
+#~ create the components of the summary table: 
+
+
+summ_0.05 <- fread("4.analysis/2.output_files/1.basic_sum_stats/basic_stats_TUN.txt")
+
+summ_0.05_table <- 
+  summ_0.05 %>% 
+  mutate(cl.Hobs = 
+           paste0("[", 
+                  format(round(l_ci.Hobs, 3), nsmall=3), " - ", 
+                  format(round(u_ci.Hobs, 3), nsmall=3), "]"),
+         cl.Hs = 
+           paste0("[", 
+                  format(round(l_ci.Hs, 3), nsmall=3), " - ", 
+                  format(round(u_ci.Hs, 3), nsmall=3), "]"),
+         cl.Fis = 
+           paste0("[", 
+                  format(round(l_ci.Fis, 3), nsmall=3), " - ", 
+                  format(round(u_ci.Fis, 3), nsmall=3), "]")) %>% 
+  select(Pop, mean.Hobs, cl.Hobs, mean.Hs, cl.Hs, mean.Fis, cl.Fis) %>% 
+  mutate(`Observed heterozygosity [95% CL]` = paste(format(round(mean.Hobs, 3), nsmall=3), cl.Hobs, sep=" "),
+         `Expected heterozygosity [95% CL]` = paste(format(round(mean.Hs, 3), nsmall=3), cl.Hs, sep=" "),
+         `Fixation index (Fis) [95% CL]` = paste(format(round(mean.Fis, 3), nsmall=3), cl.Fis, sep=" "))
+  
+  
+  
+summ_NP_0.05 <- fread("4.analysis/2.output_files/1.basic_sum_stats/basic_stats_TunNP.txt")
+
+summ_NP_0.05_table <- 
+  summ_NP_0.05 %>% 
+  subset(Pop %in% c("HNP", "JNP", "SJNP")) %>% 
+  mutate(ci.Hobs = 
+           paste0("[", 
+                  format(round(l_ci.Hobs, 3), nsmall=3), " - ", 
+                  format(round(u_ci.Hobs, 3), nsmall=3), "]"),
+         ci.Hs = 
+           paste0("[", 
+                  format(round(l_ci.Hs, 3), nsmall=3), " - ", 
+                  format(round(u_ci.Hs, 3), nsmall=3), "]"),
+         ci.Fis = 
+           paste0("[", 
+                  format(round(l_ci.Fis, 3), nsmall=3), " - ", 
+                  format(round(u_ci.Fis, 3), nsmall=3), "]")) %>% 
+  select(Pop, mean.Hobs, ci.Hobs, mean.Hs, ci.Hs, mean.Fis, ci.Fis) %>% 
+  mutate(`Observed heterozygosity [95% CL]` = paste(format(round(mean.Hobs, 3), nsmall=3), ci.Hobs, sep=" "),
+         `Expected heterozygosity [95% CL]` = paste(format(round(mean.Hs, 3), nsmall=3), ci.Hs, sep=" "),
+         `Fixation index (Fis) [95% CL]` = paste(format(round(mean.Fis, 3), nsmall=3), ci.Fis, sep=" ")) %>% 
+  select(Pop, `Observed heterozygosity [95% CL]`, `Expected heterozygosity [95% CL]`, `Fixation index (Fis) [95% CL]`)
+
+
+
+summ_both <-
+  summ_NP_0.05 %>% 
+  subset(Pop %in% c("HNP", "JNP", "SJNP")) %>% 
+  rbind(summ_0.05) %>% 
+  mutate(Pop = factor(Pop, 
+                      levels = c("AAZ",
+                                 "AZA",
+                                 "EAD",
+                                 "EEP",
+                                 "TUNISIA",
+                                 "HNP",
+                                 "JNP",
+                                 "SJNP"))) %>% 
+  arrange(Pop)
+```
+
+## Summary plot
+
+```{r}
+plot_Ho <- 
+  summ_both %>% 
+  ggplot(aes(Pop, mean.Hobs, colour=Pop))+
+  geom_rect(xmin = 5.5, xmax = 8.5,
+               ymin = -Inf, ymax = Inf,
+            fill = "grey95", colour="transparent")+
+  geom_errorbar(aes(ymin=l_ci.Hobs, 
+                    ymax=u_ci.Hobs), 
+                colour="black", width=.5)+
+  geom_point(size=15, shape=95)+
+  scale_color_manual(values=ggCols)+
+  ylab(expression(H[O]))+
+  theme(legend.position = "none",
+        axis.title.x = element_blank())
+
+plot_Hs <- 
+  summ_both %>% 
+  ggplot(aes(Pop, mean.Hs, colour=Pop))+
+  geom_rect(xmin = 5.5, xmax = 8.5,
+               ymin = -Inf, ymax = Inf,
+            fill = "grey95", colour="transparent")+
+  geom_errorbar(aes(ymin=l_ci.Hs, 
+                    ymax=u_ci.Hs), 
+                colour="black", width=.5)+
+  geom_point(size=15, shape=95)+
+  scale_color_manual(values=ggCols)+
+  ylab(expression(H[E]))+
+  theme(legend.position = "none",
+        axis.title.x = element_blank())
+
+# summ_both2 <-
+#   summ_both %>% 
+#     pivot_longer(cols=!Pop, names_to = "var", values_to = "value") %>%
+#     mutate(Type = var,
+#            Type = gsub(".Hobs","", var),
+#            Type = gsub(".Hs","", Type),
+#            Type = gsub(".Fis","", Type),
+#            Stat = gsub("mean.","", var),
+#            Stat = gsub("count.","", Stat),
+#            Stat = gsub("l_ci.","", Stat),
+#            Stat = gsub("u_ci.","", Stat),
+#            ) 
+#   
+# summ_both2 %>% 
+#   ggplot(aes(Pop, value))+
+#   geom_point(data = subset(summ_both2,Type == "mean" & Stat != "Fis"), 
+#              aes(Pop, value, colour = Stat))+
+#   geom_errorbar(data = subset(summ_both2,(Type == "u_ci" | Type == "l_ci")& Stat != "Fis"), 
+#              aes())
+
+```
+
+### Ho and He
+```{r, eval =T , fig.width=7, fig.height=5, fig.cap="Heterozygosity estimates for each population (points) with 95% confidence intervals (error bars). Observed heterozygosity is shown in black, and expected heterosygosity per subpopulation is shown in grey."}
+summ_both <- summ_both %>% 
+  mutate(Pop = factor(Pop, levels = c("AAZ",
+                                       "EAD",
+                                       "EEP",
+                                       "AZA",
+                                       "TUNISIA",
+                                       "HNP",
+                                       "JNP",
+                                       "SJNP"
+                                       )))
+
+summHobs <- summ_both %>% 
+  select(Pop, mean.Hobs, l_ci.Hobs, u_ci.Hobs) %>% 
+  rename(mean=mean.Hobs, l_ci = l_ci.Hobs, u_ci = u_ci.Hobs) %>% 
+  mutate(estimate = "Hobs")
+  
+summHs <- summ_both %>% 
+  select(Pop, mean.Hs, l_ci.Hs, u_ci.Hs) %>% 
+  rename(mean=mean.Hs, l_ci = l_ci.Hs, u_ci = u_ci.Hs) %>% 
+  mutate(estimate = "Hs")
+
+summ_both_H <- 
+  rbind(summHobs, summHs)
+  
+plot_Het <-
+summ_both_H %>% 
+  ggplot(aes(Pop, mean, group=estimate,colour=estimate))+
+  geom_rect(xmin = 5.5, xmax = 8.5,
+               ymin = -Inf, ymax = Inf,
+            fill = "grey75", colour="transparent")+
+  geom_point(position=position_dodge(width=0.5),
+             size=2)+
+  geom_errorbar(aes(
+                      ymin=l_ci,
+                      ymax=u_ci,
+                      colour = estimate),
+                width=0.5,
+                position=position_dodge(width=0.5))+
+  scale_colour_manual(values = c("black", "grey40"))+
+  ylab("Heterozygosity")+
+  scale_x_discrete(labels=c("AAZ" = "AAZ",
+                            "AZA" = "SSP",
+                            "EAD" = "EAD",
+                            "EEP" = "EEP",
+                            "TUNISIA" = "Tunisia",
+                            "HNP" = "Haddej",
+                            "JNP" = "JNP",
+                            "SJNP" = "SJNP"))+
+  theme(axis.title.x = element_blank(),
+        legend.position = "right")
+  
+  
+plot_Het
+```
+
+
+
+```{r, eval=F}
+ggsave2("4.analysis/2.output_files/1.basic_sum_stats/plot_Het.png",
+        plot_Het,
+        width=18, height = 9, units = "cm")
+```
+
+### Fis
+```{r, fig.width=7, fig.height=4, fig.cap="Fixation index estimates for each population (coloured bars), with 95% confidence intervals (black error bars)."}
+
+
+summ_both <- summ_both %>% 
+  mutate(Pop = factor(Pop, levels = c("AAZ",
+                                       "EAD",
+                                       "EEP",
+                                       "AZA",
+                                       "TUNISIA",
+                                       "HNP",
+                                       "JNP",
+                                       "SJNP"
+                                       )))
+
+plot_fis <- 
+  summ_both %>% 
+  ggplot(aes(Pop, mean.Fis, colour=Pop))+
+  geom_rect(xmin = 5.5, xmax = 8.5,
+               ymin = -Inf, ymax = Inf,
+            fill = "grey75", colour="transparent")+
+  geom_errorbar(aes(ymin=l_ci.Fis, 
+                    ymax=u_ci.Fis), 
+                colour="black", width=.1)+
+  geom_point(size=15, shape=95)+
+  geom_hline(aes(yintercept = 0),
+               color = "gray70", size = 0.6, lty=2) +
+  scale_y_continuous(limits = c(-0.02, 0.2))+
+  scale_color_manual(values=ggCols)+
+  ylab(expression(Fixation~index~(F[IS])))+
+  theme(legend.position = "none",
+        axis.title.x = element_blank())+
+  scale_x_discrete(labels=c("AAZ" = "AAZ",
+                            "AZA" = "SSP",
+                            "EAD" = "EAD",
+                            "EEP" = "EEP",
+                            "TUNISIA" = "Tunisia",
+                            "HNP" = "Haddej",
+                            "JNP" = "JNP",
+                            "SJNP" = "SJNP"))
+
+
+plot_fis
+```
+
+
+
+```{r, eval=F}
+ggsave2("4.analysis/2.output_files/1.basic_sum_stats/plot_Fis.png",
+        plot_fis,
+        width=18, height = 9, units = "cm")
+```
+
+
+```{r, eval = F}
+plot_comb <- 
+  plot_Ho  / plot_Hs / plot_fis
+
+plot_comb
+```
+
+```{r, eval=F}
+ggsave2("4.analysis/2.output_files/1.basic_sum_stats/plot_Ho_He_Fis.png",
+        plot_comb,
+        width=15, height = 20, units = "cm")
+```
+
+
+
+
+
+## Allelic richness
+
+
+```{r, eval=F}
+# ADZE
+
+dir.create("4.analysis/2.output_files/2.adze")
+
+# move into the adze wd
+main_wd <- getwd()
+setwd("4.analysis/2.output_files/2.adze")
+
+#~ use the structure file - requires individuals on two lines
+#~ converted ped file to structure using pgdspider. (plink converts to 1 row per individual)
+system("cmd", 
+       input = 
+         paste0("adze-1.0")) #~ create a blank paramfile
+                
+system("cmd", 
+       input = 
+         paste0("adze-1.0 paramfile.txt -f ADX_geno95.stru -r ADX_geno95.r_out -p ADX_geno95.p_out -g 95 -d 552 -l 1704 -nr 1 -nc 2 -s 2 -c 0 -m -9 -t 1 -fr 0 -fp 1 -pp 1")) 
+
+
+system("cmd", 
+       input = 
+         paste0("adze-1.0 paramfile.txt -f ADX_geno95_TunNP.stru -r ADX_geno95_TunNP.r_out -p ADX_geno95_TunNP.p_out -g 51 -d 552 -l 1704 -nr 1 -nc 2 -s 2 -c 0 -m -9 -t 1 -fr 0 -fp 1 -pp 1")) 
+
+
+setwd(main_wd) #~ return to the main wd
+```
+
+
+```{r}
+
+stru_pops <- 
+  read.table("4.analysis/2.output_files/2.adze/ADX_geno95.stru", skip=1) %>% 
+  select(V1, V2) %>% 
+  rename(IID = V1) %>% 
+  left_join(select(pops, IID, Pop_country)) %>% 
+  rename(Pop = V2) %>% 
+  select(-IID) %>% 
+  distinct
+
+Ar <- 
+  read.table("4.analysis/2.output_files/2.adze/ADX_geno95.r_out") %>% 
+  rename(Pop = V1, 
+         SampleSize = V2,
+         n_SNP = V3,
+         mean = V4,
+         var = V5,
+         sd = V6) %>% 
+  left_join(stru_pops) %>% 
+  mutate(se = sd / sqrt(n_SNP),
+         lower_cl = (mean + -1.96 * (sd/sqrt(n_SNP))),
+         upper_cl = (mean + 1.96 * (sd/sqrt(n_SNP))))
+
+# Remove estimates above the actual population size for a country
+Ar <- Ar %>% 
+  mutate(exclude = case_when(Pop_country == "AAZ" & as.numeric(SampleSize) > 39 ~ "excl",
+                                 Pop_country == "AZA" & SampleSize > 42 ~ "excl",
+                                 Pop_country == "EAD" & SampleSize > 66 ~ "excl",
+                                 Pop_country == "EEP" & SampleSize > 34 ~ "excl",
+                                 TRUE ~ "use"
+                                 )) %>% 
+  filter(exclude == "use")
+  
+
+############
+##~ Carry out the analysis for the Tunisian populations separately (use n=14 for Jbil)
+stru_popsTUN <- 
+  read.table("4.analysis/2.output_files/2.adze/ADX_geno95_TunNP.stru", skip=1) %>% 
+  select(V1, V2) %>% 
+  rename(IID = V1) %>% 
+  left_join(select(pops, IID, Pop_NP)) %>% 
+  rename(Pop = V2) %>% 
+  select(-IID) %>% 
+  distinct
+
+Ar_TUN <- 
+  read.table("4.analysis/2.output_files/2.adze/ADX_geno95_TunNP.r_out") %>% 
+  rename(Pop = V1, 
+         SampleSize = V2,
+         n_SNP = V3,
+         mean = V4,
+         var = V5,
+         sd = V6) %>% 
+  left_join(stru_popsTUN) %>% 
+  mutate(se = sd / sqrt(n_SNP),
+         lower_cl = (mean + -1.96 * (sd/sqrt(n_SNP))),
+         upper_cl = (mean + 1.96 * (sd/sqrt(n_SNP)))) %>% 
+  mutate(Pop = Pop_NP) %>% 
+  filter(Pop %in% c("HNP", "SJNP", "JNP"))
+
+# Remove estimates above the actual population size for a country
+Ar_TUN <- Ar_TUN %>% 
+  mutate(exclude = case_when(Pop_NP == "HNP" & as.numeric(SampleSize) > 51 ~ "excl",
+                                 Pop_NP == "JNP" & SampleSize > 14 ~ "excl",
+                                 Pop_NP == "SJNP" & SampleSize > 30 ~ "excl",
+                                 TRUE ~ "use"
+                                 )) %>% 
+  filter(exclude == "use")
+
+
+
+Ar_comb <- 
+  Ar %>% 
+  mutate(Pop = Pop_country) %>% 
+  select(-Pop_country) %>% 
+  rbind(select(Ar_TUN, -Pop_NP)) %>% 
+   mutate(cl = 
+           paste0("[", 
+                  format(round(lower_cl, 3), nsmall=3), " - ", 
+                  format(round(upper_cl, 3), nsmall=3), "]")) %>% 
+  mutate(Pop2 = case_when(Pop == "AZA" ~ "SSP",
+                         Pop == "TUNISIA" ~ "Tunisia",
+                        TRUE ~ Pop),
+         Pop2 = factor(Pop2, levels = c("AAZ",
+                                      "EAD",
+                                      "EEP",
+                                      "SSP",
+                                      "Tunisia",
+                                      "HNP",
+                                      "JNP",
+                                      "SJNP"))) 
+
+
+```
+
+```{r}
+#~ Plot of Ar at n=14 & n=34
+Ar_14 <- 
+Ar_comb %>% 
+  subset(SampleSize == 14)
+
+world_avg <- 
+  Ar_14 %>% 
+  subset(!(Pop %in% c("HNP", "JNP", "SJNP"))) %>%
+  summarize(avg = mean(mean, na.rm = T)) %>% 
+  pull(avg) # to get value rather than tibble
+
+plot_Ar_14 <- 
+ggplot(data = Ar_14,
+       aes(Pop2, mean, colour=Pop2, fill = Pop2))+
+  geom_rect(xmin = 5.5, xmax = 8.5,
+               ymin = -Inf, ymax = Inf,
+            fill = "grey75", colour="transparent")+
+  # geom_errorbar(aes(ymin=lower_cl, 
+  #                   ymax=upper_cl), 
+  #               colour="black", width=.5)+
+  #geom_point(size=15, shape=95)+
+  geom_point(data = subset(Ar_14, SampleSize == 14),
+             size=2.5
+             #shape = 19
+             )+
+  geom_hline(aes(yintercept = world_avg), 
+               color = "gray70", size = 0.6, lty=2) +
+  scale_y_continuous(limits = c(1, 2))+
+  scale_color_manual(values=ggCols2)+
+  scale_fill_manual(values=ggCols2)+
+  ylab("Allelic richness") +
+  theme(legend.position = "none",
+        axis.title.x = element_blank())
+
+plot_Ar_14
+```
+```{r, eval=F}
+ggsave2("4.analysis/2.output_files/2.adze/plot_AR_ADZE_14.png",
+        plot_Ar_14,
+        width=18, height = 9, units = "cm")
+```
+
+```{r, eval = F} 
+# Plot Ar34 without confidence bars for presentations
+
+Ar_34 <- 
+Ar_comb %>% 
+  subset(SampleSize == 34 & Pop != "HNP") %>% 
+  droplevels() %>% 
+  mutate(Pop2 = as.character(Pop2),
+         Pop3 = case_when(Pop2 == "AAZ" ~ "AAZ\n(UAE)",
+                          Pop2 == "EAD" ~ "EAD\n(UAE)",
+                          TRUE ~ Pop2),
+         Pop3 = factor(Pop3, levels = c("EEP",
+                                           "SSP",
+                                           "AAZ\n(UAE)",
+                                           "EAD\n(UAE)",
+                                           "Tunisia")))
+  
+plot_Ar_34_simple <- 
+  Ar_34 %>% 
+  ggplot(aes(Pop3, mean, colour=Pop2, fill = Pop2))+
+  geom_point(size=4, shape = 19)+ 
+  scale_color_manual(values=ggCols2)+
+  scale_fill_manual(values=ggCols2)+
+  ylab("Allelic richness")+
+  scale_y_continuous(limits = c(1.45, 1.85))+
+  theme(legend.position = "none",
+        axis.title.x = element_blank())
+
+plot_Ar_34_simple
+```
+
+```{r, eval=F}
+ggsave2("4.analysis/2.output_files/2.adze/plot_AR_ADZE_34_simple.png",
+        plot_Ar_34_simple,
+        width=13, height = 8, units = "cm")
+```
+
+
+```{r, eval = F} 
+# Plot Ar34 without confidence bars for presentations
+
+Ar_14 <- 
+Ar_comb %>% 
+  subset(SampleSize == 14 & (Pop %in% c("HNP", "JNP", "SJNP"))) %>% 
+  droplevels() %>% 
+  mutate(Pop2 = as.character(Pop2),
+         Pop3 = case_when(Pop2 == "HNP" ~ "Haddej",
+                          Pop2 == "JNP" ~ "Jbil",
+                          Pop2 == "SJNP" ~ "Senghar-\nJabbes",
+                          TRUE ~ Pop2),
+         Pop2 = factor(Pop2),
+         Pop3 = factor(Pop3))
+  
+plot_Ar_14_simple <- 
+
+  ggplot(Ar_14, aes(x=Pop3, y=mean))+
+  geom_point(aes(colour = factor(Pop2)), size=4, shape = 19) +
+  scale_color_manual(values=ggCols2)+
+  # scale_fill_manual(values=ggCols2)+
+  ylab("Allelic richness")+
+  scale_y_continuous(limits = c(1.35, 1.65))+
+  theme(legend.position = "none",
+        axis.title.x = element_blank())
+
+plot_Ar_14_simple
+```
+
+```{r, eval=F}
+ggsave2("4.analysis/2.output_files/2.adze/plot_AR_ADZE_14_simpleTUN.png",
+        plot_Ar_14_simple,
+        width=10, height = 7, units = "cm")
+```
+
+
+```{r, fig.width=7, fig.height=4, fig.cap="Allelic richness estimates for sample sizes of 14 (solid points) and 34 (open points) with 95% confidence limits (black error bars). Note that JNP & SJNP did not have 34 samples."}
+#~ Plot of Ar at n=14 & n=34
+Ar_14_34 <- 
+Ar_comb %>% 
+  subset(SampleSize == 14 | SampleSize == 34)
+
+plot_Ar_14_34 <- 
+ggplot(data = Ar_14_34,
+       aes(Pop2, mean, colour=Pop2, fill = Pop2))+
+  geom_rect(xmin = 5.5, xmax = 8.5,
+               ymin = -Inf, ymax = Inf,
+            fill = "grey95", colour="transparent")+
+  geom_errorbar(aes(ymin=lower_cl, 
+                    ymax=upper_cl), 
+                colour="black", width=.5)+
+  #geom_point(size=15, shape=95)+
+  geom_point(data = subset(Ar_14_34, SampleSize == 14),
+             size=4, shape = 19)+
+  geom_point(data = subset(Ar_14_34, SampleSize == 34),
+             size=4, shape = 1)+
+    # geom_hline(aes(yintercept = world_avg), 
+  #              color = "gray70", size = 0.6, lty=2) +
+  scale_y_continuous(limits = c(1, 2))+
+  scale_color_manual(values=ggCols2)+
+  scale_fill_manual(values=ggCols2)+
+  ylab("Allelic richness")+
+  theme(legend.position = "none",
+        axis.title.x = element_blank())
+
+plot_Ar_14_34
+```
+```{r, eval=F}
+ggsave2("4.analysis/2.output_files/2.adze/plot_AR_ADZE_14_34.png",
+        plot_Ar_14_34,
+        width=18, height = 9, units = "cm")
+```
+
+```{r, eval =F}
+
+#~ Plot how Ar changes with sample size
+plot_Ar <- 
+Ar_comb %>% 
+  subset(SampleSize <= 34) %>% 
+ggplot()+
+  geom_line(data = subset(Ar_comb, SampleSize <=34 & !(Pop %in% c("HNP", "JNP", "SJNP"))),
+            aes(SampleSize, mean, colour = Pop2), size=1.5)+
+  geom_line(data = subset(Ar_comb, SampleSize <=34 & (Pop %in% c("HNP", "JNP", "SJNP"))),
+            aes(SampleSize, mean, colour = Pop2), size=1.5, lty = 2)+
+geom_vline(xintercept = 14, colour="grey70", lty=2)+
+geom_vline(xintercept = 34, colour="grey70", lty=2)+
+  scale_color_manual(values=ggCols2)+
+  scale_fill_manual(values=ggCols2)+
+  ylab("Allelic richness") +  
+  xlab("Sample size")+
+  theme(legend.position = "right",
+        axis.text.x = element_text())+
+  guides(col=guide_legend("Population"))
+
+plot_Ar
+```
+
+```{r, eval=F}
+ggsave2("4.analysis/2.output_files/2.adze/plot_AR_ADZE_geno0.05_TUN.png",
+        plot_Ar,
+        width=18, height = 9, units = "cm")
+```
+
+
+```{r, fig.width=7, fig.height=6, fig.cap="Allelic richness estimates for each sample size from 1 to the maximum number of samples for a particular population."}
+
+#~ Plot how Ar changes with sample size
+plot_Ar2 <- 
+Ar_comb %>% 
+ggplot()+
+  geom_line(data = subset(Ar_comb, !(Pop %in% c("HNP", "JNP", "SJNP", "TUNISIA"))),
+            aes(SampleSize, mean, colour = Pop2), size=1.5)+
+  geom_line(data = subset(Ar_comb, (Pop %in% c("HNP", "JNP", "SJNP"))),
+            aes(SampleSize, mean, colour = Pop2), size=1.5, lty = 2)+
+geom_vline(xintercept = 14, colour="grey70", lty=2)+
+  scale_color_manual(values=ggCols2)+
+  scale_fill_manual(values=ggCols2)+
+  ylab("Allelic richness") +  
+  xlab("Sample size")+
+  theme(legend.position = "right",
+        axis.text.x = element_text())+
+  guides(col=guide_legend("Population"))
+
+plot_Ar2
+```
+
+```{r, eval=F}
+ggsave2("4.analysis/2.output_files/2.adze/plot_AR_ADZE_inc_samples.png",
+        plot_Ar2,
+        width=18, height = 9, units = "cm")
+```
+
+
+
+## Private allelic richness
+
+```{r}
+Pr <- 
+  read.table("4.analysis/2.output_files/2.adze/ADX_geno95.p_out") %>% 
+  rename(Pop = V1, 
+         SampleSize = V2,
+         n_SNP = V3,
+         mean.pr = V4,
+         var.pr = V5,
+         sd.pr = V6) %>% 
+  left_join(stru_pops) %>% 
+  mutate(se = sd.pr / sqrt(n_SNP),
+         lower_cl = (mean.pr + -1.96 * (sd.pr/sqrt(n_SNP))),
+         upper_cl = (mean.pr + 1.96 * (sd.pr/sqrt(n_SNP)))) %>%
+  select(-Pop) %>% 
+  rename(Pop = Pop_country)
+
+
+Pr_Tun <- 
+  read.table("4.analysis/2.output_files/2.adze/ADX_geno95_TunNP.p_out") %>% 
+  rename(Pop = V1, 
+         SampleSize = V2,
+         n_SNP = V3,
+         mean.pr = V4,
+         var.pr = V5,
+         sd.pr = V6) %>% 
+  left_join(stru_popsTUN) %>% 
+ mutate(se = sd.pr / sqrt(n_SNP),
+         lower_cl = (mean.pr + -1.96 * (sd.pr/sqrt(n_SNP))),
+         upper_cl = (mean.pr + 1.96 * (sd.pr/sqrt(n_SNP)))) %>% 
+  filter(Pop_NP %in% c("HNP", "SJNP", "JNP")) %>%
+  select(-Pop) %>%  
+  rename(Pop = Pop_NP)
+
+Pr_comb <- 
+  rbind(Pr, Pr_Tun) %>% 
+  mutate(cl = 
+           paste0("[", 
+                  format(round(lower_cl, 3), nsmall=3), " - ", 
+                  format(round(upper_cl, 3), nsmall=3), "]")) %>% 
+  select(Pop, SampleSize, mean.pr, cl) %>% 
+  mutate(Pop2 = case_when(Pop == "AZA" ~ "SSP",
+                         Pop == "TUNISIA" ~ "Tunisia",
+                        TRUE ~ Pop),
+         Pop2 = factor(Pop2, levels = c("AAZ",
+                                      "EAD",
+                                      "EEP",
+                                      "SSP",
+                                      "Tunisia",
+                                      "HNP",
+                                      "JNP",
+                                      "SJNP"))) 
+```
+
+
+```{r, fig.width=12, fig.height=6, fig.cap="Private allelic richness estimates at n = 14 (left) and n=34 (right)."}
+Pr_comb %>% 
+  subset(SampleSize == 14 | SampleSize == 34) %>% 
+   ggplot(aes(Pop2, mean.pr))+
+  geom_bar(aes(Pop2, mean.pr, fill=Pop2), stat="identity")+
+  facet_wrap(~SampleSize)+
+  scale_fill_manual(values=ggCols2)+
+  scale_colour_manual(values=ggCols2)+
+  ylab("Private allelic richness")+
+  theme(legend.position = "none",
+        axis.title.x = element_blank())
+
+
+
+```
+
+
+```{r}
+
+Pr_comb <- Pr_comb %>% 
+  mutate(Pop2 = factor(Pop2, levels = c("AAZ",
+                                        "EAD",
+                                        "EEP",
+                                        "SSP",
+                                        "Tunisia",
+                                        "HNP",
+                                        "JNP",
+                                        "SJNP"
+                                        )))
+
+plot_priv_rich_14 <- 
+Pr_comb %>% 
+  subset(SampleSize == 14) %>% 
+   ggplot(aes(Pop2, mean.pr))+
+  geom_rect(xmin = 5.5, xmax = 8.5,
+               ymin = -Inf, ymax = Inf,
+            fill = "grey75", colour="transparent")+
+  geom_bar(aes(Pop2, mean.pr, fill=Pop2), stat="identity")+
+  scale_fill_manual(values=ggCols2)+
+  scale_colour_manual(values=ggCols2)+
+  scale_x_discrete(labels=c("AAZ" = "AAZ",
+                            "AZA" = "SSP",
+                            "EAD" = "EAD",
+                            "EEP" = "EEP",
+                            "TUNISIA" = "Tunisia",
+                            "HNP" = "Haddej",
+                            "JNP" = "JNP",
+                            "SJNP" = "SJNP"))+
+  scale_y_continuous(expand = c(0,0))+
+  ylab("Private allelic richness")+
+  theme(legend.position = "none",
+        axis.title.x = element_blank())
+
+plot_priv_rich_14
+```
+
+
+
+
+
+
+
+## sMLH
+```{r}
+library(inbreedR)
+```
+
+```{r, eval=F}
+#~ convert data to homz/hetz format required for inbreedR
+
+infile <- "4.analysis/1.Input_files/ADX_geno95.raw" # 720 SNPs
+
+raw <- 
+  fread(infile) %>% 
+  mutate(IID_FID = paste(IID, FID, sep=":")) %>% 
+  select(-PAT, -MAT, -SEX, -PHENOTYPE, -FID, -IID) %>% 
+  select(IID_FID, everything())
+
+raw2 <- raw  %>% 
+  select(-IID_FID) %>% 
+  as.matrix()
+
+raw2[raw2 == 2] <- 0
+
+row.names(raw2) <- raw$IID
+
+inbreedR::check_data(raw2, num_ind = 276, num_loci = 1704)
+
+raw_sMLH <- sMLH(raw2) %>% 
+  data.frame() %>% 
+  rename(sMLH = "." )
+
+raw_sMLH$IID_FID <- row.names(raw_sMLH)
+
+raw_sMLH <- separate(raw_sMLH, 
+                     IID_FID, 
+                     into = c("IID", "FID"),
+                     sep=":",
+                     remove=F)
+
+write.table(raw_sMLH,
+            "4.analysis/2.output_files/1.basic_sum_stats/ADX_geno95.sMLH",
+            row.names=F, quote=F, sep="\t")
+```
+
+
+
+```{r, eval = F }
+#~ repeat for the Tunisian NPs. Keep the full dataset in order to keep SNP genotyping rates identical. 
+
+infile <- "4.analysis/1.Input_files/ADX_geno95_TunNP.raw" # 720 SNPs
+
+raw <- 
+  fread(infile) %>% 
+  mutate(IID_FID = paste(IID, FID, sep=":")) %>% 
+  select(-PAT, -MAT, -SEX, -PHENOTYPE, -FID, -IID) %>% 
+  select(IID_FID, everything())
+
+raw2 <- raw  %>% 
+  select(-IID_FID) %>% 
+  as.matrix()
+
+raw2[raw2 == 2] <- 0
+
+row.names(raw2) <- raw$IID
+
+inbreedR::check_data(raw2, num_ind = 276, num_loci = 1704)
+
+raw_sMLH <- sMLH(raw2) %>% 
+  data.frame() %>% 
+  rename(sMLH = "." )
+
+raw_sMLH$IID_FID <- row.names(raw_sMLH)
+raw_sMLH <- separate(raw_sMLH, 
+                     IID_FID, 
+                     into = c("IID", "FID"),
+                     sep=":",
+                     remove=F)
+
+raw_sMLH %>%
+  filter(FID == "HNP" | FID == "JNP" | FID == "SJNP") %>%
+write.table(
+            "4.analysis/2.output_files/1.basic_sum_stats/ADX_geno95_TunNP.sMLH",
+            row.names=F, quote=F, sep="\t")
+
+```
+
+
+```{r, fig.width=7, fig.height=6, fig.cap="sMLH estimates for individuals (coloured points), with population means represented by black bars with 95% confidence intervals (black error bars)."}
+sMLH <- 
+  fread("4.analysis/2.output_files/1.basic_sum_stats/ADX_geno95.sMLH") %>% 
+  rbind(fread("4.analysis/2.output_files/1.basic_sum_stats/ADX_geno95_TunNP.sMLH")) %>% 
+  rename(Pop = FID)%>% 
+  mutate(Pop2 = case_when(Pop == "AZA" ~ "SSP",
+                         Pop == "TUNISIA" ~ "Tunisia",
+                        TRUE ~ Pop),
+         Pop2 = factor(Pop2, levels = c("AAZ",
+                                      "EAD",
+                                      "EEP",
+                                      "SSP",
+                                      "Tunisia",
+                                      "HNP",
+                                      "JNP",
+                                      "SJNP"))) 
+
+
+
+summ_sMLH <- 
+  sMLH %>% 
+  group_by(Pop) %>% 
+  summarise(mean.sMLH = mean(sMLH, na.rm = TRUE),
+              sd = sd(sMLH, na.rm = TRUE),
+              count.sMLH = n()) %>% 
+    mutate(ci.sMLH = (1.96 * (sd/sqrt(count.sMLH))),
+           l_cl.sMLH = (mean.sMLH + -1.96 * (sd/sqrt(count.sMLH))),
+           u_cl.sMLH = (mean.sMLH + 1.96 * (sd/sqrt(count.sMLH)))) %>% 
+    select(-sd) %>% 
+  mutate(Pop2 = case_when(Pop == "AZA" ~ "SSP",
+                         Pop == "TUNISIA" ~ "Tunisia",
+                        TRUE ~ Pop),
+         Pop2 = factor(Pop2, levels = c("AAZ",
+                                      "EAD",
+                                      "EEP",
+                                      "SSP",
+                                      "Tunisia",
+                                      "HNP",
+                                      "JNP",
+                                      "SJNP"))) 
+
+
+
+# sMLH with mean rather than boxplots
+
+sMLH <- sMLH %>% 
+  mutate(Pop3 = factor(Pop, levels = c("AAZ",
+                                       "EAD",
+                                       "EEP",
+                                       "AZA",
+                                       "TUNISIA",
+                                       "HNP",
+                                       "JNP",
+                                       "SJNP"
+                                       )))
+
+summ_sMLH <- summ_sMLH %>% 
+  mutate(Pop3 = factor(Pop, levels = c("AAZ",
+                                       "EAD",
+                                       "EEP",
+                                       "AZA",
+                                       "TUNISIA",
+                                       "HNP",
+                                       "JNP",
+                                       "SJNP"
+                                       )))
+
+plot_sMLH_mean <- 
+  ggplot(data = sMLH, aes(Pop3, sMLH))+
+  geom_rect(xmin = 5.5, xmax = 8.5,
+               ymin = -Inf, ymax = Inf,
+            fill = "grey75", colour="transparent")+
+  geom_jitter(data = sMLH,
+              aes(Pop3, sMLH, colour=Pop3),
+              size=1.5, alpha=0.2, width = 0.15)+
+  geom_errorbar(data = summ_sMLH,
+                aes(Pop3, mean.sMLH,
+                    ymin=l_cl.sMLH,
+                    ymax=u_cl.sMLH),
+                colour="black", width=.1)+
+  geom_point(data=summ_sMLH,
+             aes(Pop3, mean.sMLH),size=12, shape=95,
+             colour="black"
+             ) +
+  scale_color_manual(values = ggCols)+
+  scale_y_continuous(limits = c(0.45, 1.55))+
+  ylab("Individual diversity (sMLH)")+
+  theme(legend.position = "none",
+        axis.title.x = element_blank())+
+  scale_x_discrete(labels=c("AAZ" = "AAZ",
+                            "AZA" = "SSP",
+                            "EAD" = "EAD",
+                            "EEP" = "EEP",
+                            "TUNISIA" = "Tunisia",
+                            "HNP" = "Haddej",
+                            "JNP" = "JNP",
+                            "SJNP" = "SJNP"))
+
+
+plot_sMLH_mean
+```
+
+```{r, eval=F}
+ggsave2("4.analysis/2.output_files/1.basic_sum_stats/plot_sMLH_means.png",
+        plot_sMLH_mean,
+        width=18, height = 8, units = "cm")
+```
+
+
+### Combine figures
+
+```{r, fig.width=7, fig.height=12, fig.cap="Figures combined as used in manuscript."}
+
+plot_Het <- 
+  plot_Het +
+  ylab("Heterozygosity")+
+  theme(axis.text.x = element_blank())
+
+plot_fis  <- 
+  plot_fis + 
+  ylab(expression(F[IS]))+
+  theme(axis.text.x = element_blank())
+
+plot_Ar_14 <- plot_Ar_14  + 
+  ylab("Ar")+
+  theme(axis.text.x = element_blank())
+
+plot_sMLH <- 
+  plot_sMLH_mean +
+  ylab("sMLH")+
+  theme(axis.text.x = element_blank())
+
+plot_priv_rich_14 <- plot_priv_rich_14 +
+  ylab("pAr")
+plot_comb <- 
+  plot_Het / plot_fis / plot_Ar_14 / plot_sMLH / plot_priv_rich_14
+  
+plot_comb <- 
+plot_comb + plot_annotation(tag_levels = "A", tag_suffix = ")")
+
+plot_comb
+```
+
+
+```{r, eval=F}
+ggsave2("4.analysis/2.output_files/1.basic_sum_stats/plot_Het_fis_Ar_pAr_sMLH.png",
+        plot_comb,
+        width=15, height = 24, units = "cm")
+```
+
+
+
+
+# Creating just the summary table from saved files 
+Using files generated above.
+
+```{r}
+## Basic stats
+
+summ_0.05 <- fread("4.analysis/2.output_files/1.basic_sum_stats/basic_stats_TUN.txt")
+
+#~ create the components of the summary table: 
+
+summ_0.05_table <- 
+  summ_0.05 %>% 
+  mutate(cl.Hobs = 
+           paste0("[", 
+                  format(round(l_ci.Hobs, 3), nsmall=3), " - ", 
+                  format(round(u_ci.Hobs, 3), nsmall=3), "]"),
+         cl.Hs = 
+           paste0("[", 
+                  format(round(l_ci.Hs, 3), nsmall=3), " - ", 
+                  format(round(u_ci.Hs, 3), nsmall=3), "]"),
+         cl.Fis = 
+           paste0("[", 
+                  format(round(l_ci.Fis, 3), nsmall=3), " - ", 
+                  format(round(u_ci.Fis, 3), nsmall=3), "]")) %>% 
+  select(Pop, mean.Hobs, cl.Hobs, 
+         mean.Hs, cl.Hs, mean.Fis, cl.Fis) %>% 
+  mutate(`Observed heterozygosity [95% CL]` =
+           paste(format(round(mean.Hobs, 3), nsmall=3), 
+                 cl.Hobs, sep=" "),
+         `Expected heterozygosity [95% CL]` =
+           paste(format(round(mean.Hs, 3), nsmall=3), 
+                 cl.Hs, sep=" "),
+         `Fixation index (Fis) [95% CL]` =
+           paste(format(round(mean.Fis, 3), nsmall=3), 
+                 cl.Fis, sep=" ")) %>% 
+  select(Pop, 
+         `Observed heterozygosity [95% CL]`, 
+         `Expected heterozygosity [95% CL]`, 
+         `Fixation index (Fis) [95% CL]`)
+
+summ_NP_0.05 <- fread("4.analysis/2.output_files/1.basic_sum_stats/basic_stats_TunNP.txt")
+
+#~ create the components of the summary table: 
+
+summ_NP_0.05_table <- 
+  summ_NP_0.05 %>% 
+  subset(Pop %in% c("HNP", "JNP", "SJNP")) %>% 
+  mutate(cl.Hobs = 
+           paste0("[", 
+                  format(round(l_ci.Hobs, 3), nsmall=3), " - ", 
+                  format(round(u_ci.Hobs, 3), nsmall=3), "]"),
+         cl.Hs = 
+           paste0("[", 
+                  format(round(l_ci.Hs, 3), nsmall=3), " - ", 
+                  format(round(u_ci.Hs, 3), nsmall=3), "]"),
+         cl.Fis = 
+           paste0("[", 
+                  format(round(l_ci.Fis, 3), nsmall=3), " - ", 
+                  format(round(u_ci.Fis, 3), nsmall=3), "]")) %>% 
+  select(Pop, mean.Hobs, cl.Hobs, 
+         mean.Hs, cl.Hs, mean.Fis, cl.Fis) %>% 
+  mutate(`Observed heterozygosity [95% CL]` =
+           paste(format(round(mean.Hobs, 3), nsmall=3), 
+                 cl.Hobs, sep=" "),
+         `Expected heterozygosity [95% CL]` =
+           paste(format(round(mean.Hs, 3), nsmall=3), 
+                 cl.Hs, sep=" "),
+         `Fixation index (Fis) [95% CL]` =
+           paste(format(round(mean.Fis, 3), nsmall=3), 
+                 cl.Fis, sep=" ")) %>% 
+  select(Pop, 
+         `Observed heterozygosity [95% CL]`, 
+         `Expected heterozygosity [95% CL]`, 
+         `Fixation index (Fis) [95% CL]`)
+
+summ_0.05 <- 
+  rbind(summ_0.05_table, 
+       summ_NP_0.05_table)
+
+
+## Allelic richness
+
+
+stru_pops <- 
+  read.table("4.analysis/2.output_files/2.adze/ADX_geno95.stru", skip=1) %>% 
+  select(V1, V2) %>% 
+  rename(IID = V1) %>% 
+  left_join(select(pops, IID, Pop_country)) %>% 
+  rename(Pop = V2) %>% 
+  select(-IID) %>% 
+  distinct
+
+Ar <- 
+  read.table("4.analysis/2.output_files/2.adze/ADX_geno95.r_out") %>% 
+  rename(Pop = V1, 
+         SampleSize = V2,
+         n_SNP = V3,
+         mean = V4,
+         var = V5,
+         sd = V6) %>% 
+  left_join(stru_pops) %>% 
+  mutate(se = sd / sqrt(n_SNP),
+         lower_cl = (mean + -1.96 * (sd/sqrt(n_SNP))),
+         upper_cl = (mean + 1.96 * (sd/sqrt(n_SNP))))
+
+############
+##~ Carry out the analysis for the Tunisian populations separately (use n=14 for Jbil)
+stru_popsTUN <- 
+  read.table("4.analysis/2.output_files/2.adze/ADX_geno95_TunNP.stru", skip=1) %>% 
+  select(V1, V2) %>% 
+  rename(IID = V1) %>% 
+  left_join(select(pops, IID, Pop_NP)) %>% 
+  rename(Pop = V2) %>% 
+  select(-IID) %>% 
+  distinct
+
+Ar_TUN <- 
+  read.table("4.analysis/2.output_files/2.adze/ADX_geno95_TunNP.r_out") %>% 
+  rename(Pop = V1, 
+         SampleSize = V2,
+         n_SNP = V3,
+         mean = V4,
+         var = V5,
+         sd = V6) %>% 
+  left_join(stru_popsTUN) %>% 
+  mutate(se = sd / sqrt(n_SNP),
+         lower_cl = (mean + -1.96 * (sd/sqrt(n_SNP))),
+         upper_cl = (mean + 1.96 * (sd/sqrt(n_SNP)))) %>% 
+  mutate(Pop = Pop_NP) %>% 
+  filter(Pop %in% c("HNP", "SJNP", "JNP"))
+
+
+
+
+Ar_comb <- 
+  Ar %>% 
+  mutate(Pop = Pop_country) %>% 
+  select(-Pop_country) %>% 
+  rbind(select(Ar_TUN, -Pop_NP)) %>% 
+  filter(SampleSize == 14 | SampleSize == 34) %>% 
+   mutate(cl = 
+           paste0("[", 
+                  format(round(lower_cl, 4), nsmall=4), " - ", 
+                  format(round(upper_cl, 4), nsmall=4), "]")) %>% 
+          
+  mutate(`Allelic richness [95% CL]` = paste(format(round(mean, 3), nsmall=3), cl, sep=" ")) %>% 
+  select(Pop, SampleSize, `Allelic richness [95% CL]`)
+
+#~ transpose
+Ar_comb <- 
+  Ar_comb %>% 
+  pivot_wider(id_cols = Pop, 
+              names_from = SampleSize, 
+              values_from = `Allelic richness [95% CL]`) %>% 
+  rename(`Allelic richness n=14 [95% CL]` = `14`, 
+         `Allelic richness n=34 [95% CL]` = `34`)
+
+
+
+## Private allelic richness
+stru_pops <- 
+  read.table("4.analysis/2.output_files/2.adze/ADX_geno95.stru", skip=1) %>% 
+  select(V1, V2) %>% 
+  rename(IID = V1) %>% 
+  left_join(select(pops, IID, Pop_country)) %>% 
+  rename(Pop = V2) %>% 
+  select(-IID) %>% 
+  distinct
+
+Pr <- 
+  read.table("4.analysis/2.output_files/2.adze/ADX_geno95.p_out") %>% 
+  rename(Pop = V1, 
+         SampleSize = V2,
+         n_SNP = V3,
+         mean = V4,
+         var = V5,
+         sd = V6) %>% 
+  left_join(stru_pops) %>% 
+  mutate(se = sd / sqrt(n_SNP),
+         lower_cl = (mean + -1.96 * (sd/sqrt(n_SNP))),
+         upper_cl = (mean + 1.96 * (sd/sqrt(n_SNP)))) %>% 
+  filter(SampleSize == 14 | SampleSize == 34) %>% 
+  select(-Pop) %>% 
+  rename(Pop = Pop_country)
+
+
+stru_pops_TUN <- 
+  read.table("4.analysis/2.output_files/2.adze/ADX_geno95_TunNP.stru", skip=1) %>% 
+  select(V1, V2) %>% 
+  rename(IID = V1) %>% 
+  left_join(select(pops, IID, Pop_NP)) %>% 
+  rename(Pop = V2) %>% 
+  select(-IID) %>% 
+  distinct
+
+Pr_Tun <- 
+  read.table("4.analysis/2.output_files/2.adze/ADX_geno95_TunNP.p_out") %>% 
+  rename(Pop = V1, 
+         SampleSize = V2,
+         n_SNP = V3,
+         mean = V4,
+         var = V5,
+         sd = V6) %>% 
+  left_join(stru_pops_TUN) %>% 
+  mutate(se = sd / sqrt(n_SNP),
+         lower_cl = (mean + -1.96 * (sd/sqrt(n_SNP))),
+         upper_cl = (mean + 1.96 * (sd/sqrt(n_SNP)))) %>% 
+  filter(SampleSize == 14 & Pop_NP %in% c("HNP", "SJNP", "JNP")) %>%
+  select(-Pop) %>%  
+  rename(Pop = Pop_NP)
+
+Pr_comb <- 
+  rbind(Pr, Pr_Tun) %>% 
+  mutate(cl = 
+           paste0("[", 
+                  format(round(lower_cl, 4), nsmall=4), " - ", 
+                  format(round(upper_cl, 4), nsmall=4), "]")) %>% 
+          
+  mutate(`Private allelic richness [95% CL]` = paste(format(round(mean, 4), nsmall=4), cl, sep=" ")) %>% 
+  select(Pop, SampleSize, `Private allelic richness [95% CL]`)%>% 
+  pivot_wider(id_cols = Pop, 
+              names_from = SampleSize, 
+              values_from = `Private allelic richness [95% CL]`) %>% 
+  rename(`Private allelic richness n=14 [95% CL]` = `14`, 
+         `Private allelic richness n=34 [95% CL]` = `34`)
+
+
+## sMLH
+sMLH <- fread("4.analysis/2.output_files/1.basic_sum_stats/ADX_geno95.sMLH") %>% 
+  rbind(fread("4.analysis/2.output_files/1.basic_sum_stats/ADX_geno95_TunNP.sMLH")) %>% 
+  rename(Pop = FID)
+
+summ_sMLH <- 
+  sMLH %>% 
+  group_by(Pop) %>% 
+  summarise(mean.sMLH = mean(sMLH, na.rm = TRUE),
+              sd = sd(sMLH, na.rm = TRUE),
+              count.sMLH = n()) %>% 
+    mutate(ci.sMLH = (1.96 * (sd/sqrt(count.sMLH))),
+           l_cl.sMLH = (mean.sMLH + -1.96 * (sd/sqrt(count.sMLH))),
+           u_cl.sMLH = (mean.sMLH + 1.96 * (sd/sqrt(count.sMLH)))) %>% 
+    select(-sd)%>% 
+   mutate(cl = 
+           paste0("[", 
+                  format(round(l_cl.sMLH, 3), nsmall=3), " - ", 
+                  format(round(u_cl.sMLH, 3), nsmall=3), "]")) %>% 
+          
+  mutate(`sMLH [95% CL]` = paste(format(round(mean.sMLH, 3), nsmall=3), cl, sep=" ")) %>% 
+  select(Pop, `sMLH [95% CL]`)
+
+
+
+
+```
+
+
+## Combine into one table
+
+```{r}
+sampleSize <- fread("4.analysis/1.Input_files/ADX_geno50.ped") %>% 
+  count(V1)
+sampleSize_TUN <- fread("4.analysis/1.Input_files/ADX_geno50_TunNP.ped") %>% 
+  count(V1) %>% 
+  filter(V1 %in% c("HNP", "JNP", "SJNP"))
+
+sampleSize <- rbind(sampleSize, sampleSize_TUN) %>% 
+  rename(Pop = V1)
+```
+
+```{r}
+full_table <- 
+full_join(sampleSize, summ_0.05) %>% 
+  full_join(Ar_comb) %>% 
+  full_join(Pr_comb) %>% 
+  full_join(summ_sMLH)
+  
+kable(full_table)
+```
+
+```{r, eval = F}
+write.table(full_table,
+            "4.analysis/2.output_files/1.basic_sum_stats/summary_table.txt",
+            row.names=F, quote=T, sep="\t")
+
+write.csv(full_table,
+            "4.analysis/2.output_files/1.basic_sum_stats/summary_table.csv",
+            row.names=F, quote=T)
+```
+

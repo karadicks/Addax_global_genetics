@@ -1,0 +1,1027 @@
+---
+title: "WG1705 - SNP QC"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::downcute:
+    self_contained: true
+    toc_depth: 4
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r options, echo=F, message = F, warning = F}
+library(knitr)
+library(rmdformats)
+
+## Global options
+opts_chunk$set(comment=NA, 
+                      prompt=FALSE,
+                      tidy=TRUE,
+                      fig.width=12, 
+                      fig.height=6, 
+                      echo=T,
+                      eval=F, 
+                      warning=FALSE, 
+                      message=F)
+opts_knit$set(width=75)
+
+# Always load
+library(tidyverse)
+library(data.table)
+
+# ggplot
+library(ggthemr)
+library(patchwork)
+ggthemr(palette = "pale", layout = "clean", 
+        line_weight = 0.7, text_size = 12, type = "outer")
+options(scipen=999)
+
+
+write.table <- function(...,row.names=FALSE, quote=FALSE){
+   utils::write.table(..., row.names = row.names, quote = quote)
+} 
+
+
+
+source("scripts/Compare_repeat_genotypes.R")
+source("scripts/basic_stats_sum.R")
+source("scripts/VCFfilterstats.R")
+source("scripts/VCFfilterstats.plot.R")
+
+# create a colour palette for use throughout
+
+cols_all <- 
+  data.frame(Pop = c("AAZ",
+"AZA",
+"EAD",
+"EEP",
+"TUNISIA",
+"HNP",
+"JNP",
+"SJNP"),
+colours= c(
+"#977398",
+"#CCC591",
+"#798E87",
+"#C27D38",
+"#306489",
+"#008B8B",
+"#1E90FF",
+"#18186F"
+))
+
+ggCols <- cols_all$colours
+names(ggCols) <- cols_all$Pop
+```
+
+
+330 samples mapped, 315 individuals included in stacks output.
+
+```{r, eval=T}
+# read in population files
+pops <- fread("metadata/ADX_samples_populations.csv") %>% 
+  mutate(INDV = IID)
+
+
+#~ note this is established later in the script (chunk 21) but moved here for simplicity when running parts of the analysis that later rely on this df. 
+pops2 <- pops %>% 
+  mutate(new_ID = case_when(Pop_country == "EEP" & IID == "ADX133_44" ~ "ADX177_44",
+                            Pop_country == "AZA" & IID == "ADX422a_46" ~ "ADX418b_46",
+                            Pop_country == "AZA" & IID == "ADX418_46" ~ "ADX418a_46",
+                            Pop_country == "AZA" & IID == "ADX422b_46" ~ "ADX422_46",
+                            Pop_country == "EAD" & IID == "ADX321_44" ~ "ADX133_44",
+                            TRUE ~ IID)) %>% 
+  mutate(new_Pop_country = case_when(Pop_country == "EEP" & new_ID == "ADX177_44" ~ "AAZ",
+                             Pop_country == "EAD" & new_ID == "ADX133_44" ~ "EEP",
+                             TRUE ~ Pop_country)) %>% 
+  rename(Old_IID = IID,
+         Old_FID = Pop_country,
+         IID = new_ID,
+         Pop_country = new_Pop_country)
+
+```
+
+# Basic filter
+
+### Read depths & counts
+
+Minimum depth, minimum mean depth, minor allele count of 3.
+
+```{bash, eval=F}
+# Personal computer 
+conda activate snp_processing
+
+mkdir 3.SNP_QC/1.BasicFilt
+in=2.gstacks/2.populations/populations.snps.vcf
+out=3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3
+
+vcftools --vcf $in --out $out --minDP 5 --min-meanDP 15 --mac 3 --recode --recode-INFO-all
+
+grep -v '#' "$out".recode.vcf | wc -l # 4624
+
+
+# VCF QC files
+
+functs="depth
+site-mean-depth 
+geno-depth
+missing-indv 
+missing-site 
+indv-freq-burden 
+freq2 
+singletons 
+012 
+het 
+site-quality
+"
+
+in=3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.recode.vcf
+out=3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3
+
+for i in $functs 
+do
+vcftools --vcf $in --out $out --$i
+done
+```
+
+```{r, eval=T, fig.width=8, fig.height=3, fig.cap="Proportion of missing SNPs per sample after applying the basic filter. High levels of missing SNPs can indicate poor sample quality. There is no strong population effect here, suggesting sample failures are not disproportionately affecting particular populations at a worrying level."}
+fread("3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.imiss") %>% 
+  left_join(select(pops, INDV, Pop_country)) %>% 
+  ggplot() +
+  geom_bar(aes(reorder(INDV, F_MISS), F_MISS, fill=Pop_country), stat="identity")+
+  scale_fill_manual(values = ggCols)+
+  ylab("Proportion SNPs missing")+
+  theme(axis.text.x = element_blank(),
+        axis.title.x = element_blank())
+```
+
+## SNP geno 25% (exclude if \> 75% missing)
+
+```{bash, eval=F}
+# SNP genotyping rate 75%
+
+in=3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3
+
+vcftools --vcf ${in}.recode.vcf --out ${in}.geno25 --max-missing 0.25 --recode --recode-INFO-all #4827 SNPs
+
+vcftools --vcf ${in}.geno25.recode.vcf --out $out --missing-indv
+
+```
+
+## Check for library effects
+
+```{r, eval=T, fig.width=8, fig.height=5, fig.cap="Numbers of samples from each population included on different sequencing libraries"}
+pops %>% 
+  group_by(Pop_country, Plate) %>% 
+  count() %>% 
+  ggplot() +
+  geom_bar(aes(Plate, n, fill=Pop_country), stat="identity")+
+  scale_fill_manual(values = ggCols)+
+  ylab("Number of samples")+
+  xlab("Library")+
+  scale_y_continuous(expand = c(0,0))+
+  labs(fill="Population")
+
+```
+
+```{bash, eval=F}
+# Personal computer 
+conda activate snp_processing
+
+# Filtering scheme 1 - 50% geno
+in=3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25
+
+# Conversion to plink does not work with "HiC_scaffold_" as part of the chromosome name, so need to remove
+sed 's/HiC_scaffold_//' ${in}.recode.vcf > ${in}.conv_plink.vcf
+# Convert to plink
+vcftools --vcf ${in}.conv_plink.vcf --out ${in} --plink
+```
+
+```{r, eval=F}
+system("cmd", input=paste0("plink --file 3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25 --autosome-num 29 --pca --out 3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25"))
+```
+
+```{r, eval=T, fig.height=5, fig.width=10, fig.cap="Simplistic PCA analyses of samples, coloured according to either library (left) or population (right). Population structure is apparent, but not entirely driven by library as evident by distribution of samples on RZSS37 and RZSS38."}
+plot_lib <- 
+  fread("3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.eigenvec") %>% 
+  rename(IID = V1) %>% 
+  left_join(select(pops, IID, Plate, Pop_country)) %>% 
+  subset(Plate != "RZSS36") %>% 
+  ggplot()+
+  geom_point(aes(V3, V4, colour=Plate), size=3)+
+  xlab("PC1")+
+  ylab("PC2")+
+  scale_color_brewer(type="div",palette = "Set1")+
+  labs(colour="Library")
+
+plot_pop <- 
+  fread("3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.eigenvec") %>% 
+  rename(IID = V1) %>% 
+  left_join(select(pops, IID, Plate, Pop_country)) %>% 
+  ggplot()+
+  geom_point(aes(V3, V4, colour=Pop_country), size=3)+
+  scale_color_manual(values=ggCols)+
+  xlab("PC1")+
+  ylab("PC2")+
+  labs(colour="Population")
+
+plot_lib | plot_pop
+```
+
+
+```{r, eval=T, fig.height=4, fig.width=5}
+imiss <- fread("3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.imiss")
+
+fread("3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.eigenvec") %>% 
+  rename(INDV = V1) %>% 
+  left_join(select(pops, INDV, Plate, Pop_country)) %>% 
+  left_join(imiss) %>% 
+  ggplot()+
+  geom_point(aes(V3, V4, colour=F_MISS), size=3)+
+  xlab("PC1")+
+  ylab("PC2")+
+  labs(colour="Prop \nmissing\ngenotypes")
+```
+
+## Individual geno rate (exclude \> 50% missing)
+
+```{r, eval=T, fig.width=6, fig.height=4, fig.caption="Samples with > 50% missing SNPs."}
+fread("3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.imiss") %>% 
+  left_join(select(pops, INDV, Pop_country)) %>% 
+  arrange(desc(F_MISS)) %>% 
+  subset(F_MISS > 0.5) %>% 
+  ggplot() +
+  geom_bar(aes(reorder(INDV, F_MISS), F_MISS, fill=Pop_country), stat="identity")+
+    scale_fill_manual(values = ggCols)+
+  ylab("Proportion SNPs missing")+
+  theme(axis.text.x = element_text(angle=50, hjust=1),
+        axis.title.x = element_blank())+
+  labs(fill = "Population")
+```
+
+```{r, eval=F}
+
+file <- "3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3"
+fread(paste0(file,".imiss")) %>% 
+  filter(F_MISS > 0.5) %>%
+  select(INDV) %>% 
+  write.table( paste0(file,".imissFILT50"),
+            col.names = FALSE, row.names = FALSE, quote = FALSE)
+```
+
+```{bash, eval=F}
+#~ Remove the individuals
+in=3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3
+
+vcftools --vcf ${in}.geno25.recode.vcf --out ${in}.geno25.ind50 --remove ${in}.imissFILT50 --recode --recode-INFO-all # 298 individuals left, 4827 SNPs
+```
+
+## SNP geno rate (max missing 50%)
+
+```{bash, eval=F}
+# SNP genotyping rate 75%
+
+in=3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.ind50
+
+vcftools --vcf ${in}.recode.vcf --out ${in}.geno50 --max-missing 0.5 --recode --recode-INFO-all  # 4572 SNPs
+
+vcftools --vcf ${in}.geno50.recode.vcf --out ${in}.geno50 --missing-indv
+
+```
+
+## General QC of the current SNPs
+
+```{bash, eval=F}
+# VCF QC files
+
+functs="depth
+site-mean-depth 
+geno-depth
+missing-indv 
+missing-site 
+indv-freq-burden 
+freq2 
+singletons 
+012 
+het 
+site-quality
+"
+
+in=3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50
+
+for i in $functs 
+do
+vcftools --vcf ${in}.recode.vcf --out $in --$i
+done
+
+```
+
+```{r eval=T, fig.height=15, fig.width=15, fig.cap="QC after basic filtering \n(geno max missing 75%, ind 50%)"}
+
+# load & plot VCFtools QC files ----
+dir <- "3.SNP_QC/1.BasicFilt"
+vcf <- "ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50" # assumes file ending is ".recode.vcf"
+
+ind_stats_Filt1 <- read.ind.stats(dir, vcf)
+loc_stats_Filt1 <- read.loc.stats(dir, vcf)
+
+names(ind_stats_Filt1) <- gsub("_ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50", "", names(ind_stats_Filt1))
+names(loc_stats_Filt1) <- gsub("_ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50", "", names(loc_stats_Filt1))
+
+plot.vcf.ind.stats(ind_stats_Filt1)
+plot.vcf.loc.stats(loc_stats_Filt1)
+```
+
+
+
+## Create plink files with population data
+
+```{r, eval=F}
+#~ Create a chromosome map for vcftools to use in order to keep original chromosome names. Format is two columns, first=name in original file, second = name is new file. Here, the two names are the same. 
+fread("../../../4.ref_genomes/SHO_genome/chromosome_n `ames", header=F) %>% 
+  mutate(V2=V1) %>% 
+  write.table("3.SNP_QC/1.BasicFilt/plink_chrom_map",
+              col.names=F)
+
+```
+
+```{bash 6.export_plink, eval=F}
+in=3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50
+c_map=3.SNP_QC/1.BasicFilt/plink_chrom_map
+
+vcftools --vcf ${in}.recode.vcf --out ${in} --plink --chrom-map $c_map
+
+```
+
+```{r, eval=F}
+fread("3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.ped") %>% 
+  rename(IID = V2) %>%
+  left_join(select(pops, IID, Pop_country)) %>%  
+    select(-V1) %>% 
+    select(Pop_country, IID, everything()) %>%
+    write.table("3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.ped",
+                row.names=F, col.names=F, sep="\t")
+
+file.copy("3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.map",
+          "3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.map")
+```
+
+## ID conversion for RZSS44
+
+Two repeats were mislabelled in the original library preparation worksheet. These are updated here in the final data set.
+
+```{r, eval=F}
+fread("3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.ped",
+      header=F) %>% 
+  mutate(new_ID = case_when(V1 == "EEP" & V2 == "ADX133_44" ~ "ADX177_44",
+                            V1 == "AZA" & V2 == "ADX422a_46" ~ "ADX418b_46",
+                            V1 == "AZA" & V2 == "ADX418_46" ~ "ADX418a_46",
+                            V1 == "AZA" & V2 == "ADX422b_46" ~ "ADX422_46",
+                            V1 == "EAD" & V2 == "ADX321_44" ~ "ADX133_44",
+                            
+                            TRUE ~ V2),
+         new_FID = case_when(V1 == "EEP" & V2 == "ADX133_44" ~ "AAZ",
+                             V1 == "EAD" & V2 == "ADX321_44" ~ "EEP",
+                             TRUE ~ V1)) %>% 
+  select(-V1, -V2) %>% 
+  select(new_FID, new_ID, everything()) %>% 
+  write.table("3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.ped",
+              col.names=F, row.names = F, quote=F)
+
+file.copy("3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.map",
+          "3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.map")
+```
+
+
+## Check for duplicated SNPs
+
+No apparently duplicated SNPs.
+
+```{r}
+fread("3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.map") %>% 
+  mutate(comb = paste(V1, V4, sep=":")) %>% 
+  count(comb) %>% 
+  count(n)
+```
+
+# Repeated samples
+
+Look now at the repeated samples within the dataset. Chosen to assess this before HWE and LD as there are a handful of individuals repeated several times which, though unlikely, could bias the HWE/LD estimates.
+
+```{r, eval=F}
+dir.create("3.SNP_QC/2.Repeated_individuals")
+
+system("cmd", input=paste0("plink --file 3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv --aec --missing --genome --pca --recode vcf-iid --out 3.SNP_QC/2.Repeated_individuals/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv")) 
+```
+
+```{r, eval = T, fig.height=4, fig.width=4}
+gen <- 
+  fread("3.SNP_QC/2.Repeated_individuals/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.genome") %>% 
+  convert_ID(IID1) %>% 
+  rename(WG_ID1 = WG_ID) %>% 
+  convert_ID(IID2) %>% 
+  rename(WG_ID2 = WG_ID)
+
+gen %>% 
+  subset(PI_HAT > 0) %>% 
+  ggplot()+
+  geom_histogram(aes(PI_HAT)) +
+  xlab("Plink relatedness measure (PI_HAT)")
+```
+
+Look at the repeated individuals:
+
+```{r, eval=T}
+gen %>% 
+  subset(WG_ID1 == WG_ID2) %>%
+  select(IID1, IID2, FID1, PI_HAT) %>% 
+  arrange(IID1) %>% 
+    kable(caption = "All duplicated samples show high kinship to one another.")
+```
+
+```{r, eval=T, fig.height=3, fig.width=4, fig.cap="Kinship is higher between samples within a population than between samples from different populations for RZSS46. This suggests its unlikely there is any systematic location error on the plate when making the library."}
+gen %>% 
+  select(FID1, FID2, IID1, IID2, PI_HAT) %>% 
+  separate(IID1, into=c("Sample1", "plate1"),remove = F) %>% 
+  separate(IID2, into=c("Sample2", "plate2"),remove = F) %>% 
+  subset(plate1 == "46" & plate2 == "46") %>% 
+  mutate(Pairwise_pop = case_when(FID1 == FID2 ~ "same pop",
+                                  FID1 != FID2 ~ "different pops",
+                                  )) %>% 
+  ggplot()+
+  geom_boxplot(aes(Pairwise_pop, PI_HAT)) +
+  xlab("Kinship (PI_HAT)")
+```
+
+```{r,, fig.width=3, fig.height=3, fig.cap="Pairwise kinship in repeated samples shown as pairs for which neither samples was on library RZSS46 (No_RZSS46), at least one of the pairs was on library RZSS46, or both samples were on library RZSS46."}
+gen %>% 
+  select(FID1, FID2, IID1, IID2, PI_HAT) %>% 
+  separate(IID1, into=c("Sample1", "plate1"),remove = F) %>% 
+  separate(IID2, into=c("Sample2", "plate2"),remove = F) %>% 
+  mutate(Pairwise_pop = case_when(plate1 == "46" & plate2 == "46" ~ "Both_RZSS46",
+                                  plate1 == "46" | plate2 == "46" ~ "RZSS46+other",
+                                  TRUE ~ "No_RZSS46",
+                                  )) %>%
+  subset(PI_HAT > 0.75 ) %>% 
+  
+  ggplot()+
+  geom_boxplot(aes(Pairwise_pop, PI_HAT), fill = "transparent") +
+  geom_jitter(aes(Pairwise_pop, PI_HAT), width=0.2)+
+  ylab("Kinship (PI_HAT)")+
+  theme(axis.title.x = element_blank())
+```
+
+Look at the samples that were not intentional repeats to assess for high degrees of similarity:
+
+```{r, eval=T}
+gen %>% 
+  subset(WG_ID1 != WG_ID2) %>%
+  select(IID1, IID2, FID1, FID2, PI_HAT) %>% 
+  filter(PI_HAT > 0.75) %>% 
+    kable(caption = "High genetic similarity amongst samples that were not known to be repeats.")
+```
+
+Run KING for the population
+
+```{r, eval=F}
+system("cmd", input=paste0("plink --file 3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv --aec --maf 0.1 --recode vcf-iid --out 3.SNP_QC/2.Repeated_individuals/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.maf0.1")) # 2343 SNPs
+```
+
+```{bash, eval=F}
+
+cat 3.SNP_QC/2.Repeated_individuals/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.maf0.1.vcf | grep "^#CHROM" |  sed "s/\t/\n/g" | grep "^ADX" > 3.SNP_QC/2.Repeated_individuals/ADX_samples.txt 
+
+NgsRelate=/home/kdicks/ngsRelate/ngsRelate/ngsRelate
+VCFFILE="3.SNP_QC/2.Repeated_individuals/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.maf0.1.vcf"
+IDs=3.SNP_QC/2.Repeated_individuals/ADX_samples.txt
+
+$NgsRelate -h $VCFFILE -O ${VCFFILE}.res -T GT -c 1 -p 22 -z $IDs
+```
+
+```{r, eval=T, fig.width=8, fig.height=8, fig.cap="Kinship within each population measured by KING (allele frequency free)."}
+KING <- fread("3.SNP_QC/2.Repeated_individuals/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.maf0.1.vcf.res") %>% 
+  select(ida, idb, KING) %>% 
+  mutate(IID = ida) %>% 
+  left_join(select(pops2, IID, Pop_country)) %>% 
+  rename(FID1=Pop_country) %>% 
+  mutate(IID = idb) %>% 
+  left_join(select(pops2, IID, Pop_country)) %>% 
+  rename(FID2=Pop_country) %>% 
+  select(-IID)
+```
+
+```{r}
+KING %>% 
+  subset(FID1 == FID2) %>% 
+  ggplot()+
+  geom_histogram(aes(KING), binwidth = 0.05)+
+  facet_wrap(~FID1, scales="free_y")+
+  xlab("Kinship (KING)")
+```
+
+```{r, fig.width=8, fig.height=4, fig.cap="Pairwise kinship measured by KING for all samples (left) and those with high similarity (right)."}
+plotA <- 
+  KING %>%
+  subset(FID1 == FID2) %>% 
+  ggplot()+
+  geom_jitter(aes(FID1, KING, colour=FID1), width=0.2, alpha=0.3)+
+  scale_colour_manual(values = ggCols)+
+  theme(axis.title.x = element_blank())+
+  theme(legend.position = "none")
+
+
+plotB <-
+  KING %>%
+  subset(FID1 == FID2) %>% 
+  ggplot()+
+  geom_jitter(aes(FID1, KING, colour=FID1), width=0.2)+
+  scale_colour_manual(values = ggCols)+
+  coord_cartesian(ylim = c(0.3, NA))+
+  theme(axis.title.x = element_blank())+
+  theme(legend.position = "none")
+
+plotA | plotB 
+```
+
+```{r}
+KING %>% 
+  subset(FID1 == FID2 & FID1 == "AAZ"| FID1 == "AZA" | FID1 == "TUNISIA") %>% 
+  filter(KING > 0.35)
+
+
+KING %>% 
+  subset(FID1 == FID2 & FID1 == "EAD") %>% 
+  filter(KING > 0.35)
+
+KING %>% 
+  subset(FID1 == FID2 & FID1 == "EEP") %>% 
+  filter(KING > 0.35)
+
+```
+
+
+## Allelic dropout and genotyping error in repeated samples
+
+```{r, eval = T}
+reps <- 
+  KING %>% 
+  subset(KING > 0.35) %>% 
+  convert_ID(ida) %>% 
+  rename(WG_ID1 = WG_ID) %>% 
+  convert_ID(idb) %>% 
+  rename(WG_ID2 = WG_ID) %>% 
+  mutate(ID_change = case_when(WG_ID1 != WG_ID2 ~ "Alter",
+                               TRUE~ "Keep")) 
+```
+
+```{r, eval=F}
+data.frame(IID = c(reps$ida, reps$idb),
+           FID = c(reps$FID1, reps$FID2)) %>% 
+  distinct() %>% 
+  select(FID, IID) %>% 
+  write.table("3.SNP_QC/2.Repeated_individuals/ADX_reps.txt",
+              row.names=F, col.names=F, sep="\t")
+
+
+system("cmd", input=paste0("plink --file 3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv --aec --keep  3.SNP_QC/2.Repeated_individuals/ADX_reps.txt --missing --recode --out 3.SNP_QC/2.Repeated_individuals/ADX.reps")) 
+```
+
+```{r, eval=F}
+# assign new ID to samples which are repeats with different WG_IDs
+
+#~ samples to be adjusted
+adjust <- 
+  reps %>% 
+  filter(ID_change == "Alter") %>% 
+  mutate(TMP_ID1 = paste("TMP", formatC(seq(6), width=3, flag="0"), sep=""),
+         TMP_ID2 = paste("TMP", formatC(seq(6), width=3, flag="0"), sep=""), 
+         TMP_ID1 = paste(TMP_ID1, "01", sep="_"),
+         TMP_ID2 = paste(TMP_ID2, "02", sep="_"))
+  
+adjust1 <- 
+  adjust %>% 
+  select(ida, FID1, TMP_ID1) %>% 
+  rename(IID = ida, FID = FID1, TMP_ID = TMP_ID1)
+
+adjust2 <- 
+  adjust %>% 
+  select(idb, FID2, TMP_ID2) %>% 
+  rename(IID = idb, FID = FID2, TMP_ID = TMP_ID2)
+
+adjust_simp <- 
+  rbind(adjust1, adjust2)
+
+#~ samples keeping original ID
+keep1 <- 
+  reps %>% 
+  filter(ID_change == "Keep") %>% 
+  select(ida, FID1) %>% 
+  rename(IID = ida, FID = FID1)
+
+keep2 <- 
+  reps %>% 
+  filter(ID_change == "Keep") %>% 
+  select(idb, FID2) %>% 
+  rename(IID = idb, FID = FID2)
+
+keep_simp <- 
+  rbind(keep1, keep2) %>% 
+  mutate(TMP_ID = IID) %>% 
+  distinct()
+
+#~ merge the ajdusted & non-adjusted lists
+reps_simple <- 
+  rbind(keep_simp, adjust_simp)
+
+
+#~ rename the samples in the original ped file
+fread("3.SNP_QC/2.Repeated_individuals/ADX.reps.ped") %>% 
+  #select(V1, V2) %>% 
+  rename(FID = V1, IID = V2) %>% 
+  left_join(reps_simple) %>% 
+  select(-IID) %>% 
+  rename(V1 = FID, V2 = TMP_ID) %>% 
+  select(V1, V2, everything()) %>% 
+  write.table("3.SNP_QC/2.Repeated_individuals/ADX.reps_IDedit.ped",
+               row.names=F, col.names=F, quote=F, sep="\t")
+
+#~ copy the map file for use in the geno error script
+file.copy("3.SNP_QC/2.Repeated_individuals/ADX.reps.map",
+          "3.SNP_QC/2.Repeated_individuals/ADX.reps_IDedit.map")
+```
+
+```{r, eval=T}
+#~ run the genotyping error script
+geno_error <- export_numbers_diffs("3.SNP_QC/2.Repeated_individuals/ADX.reps_IDedit")
+
+geno_error <- 
+  geno_error %>% 
+  pivot_wider(id_cols = sample_pair, 
+              names_from = differences,
+              values_from = n) %>% 
+  rowwise() %>% 
+  mutate(total_SNPs = sum(allelic_dropout, same, alternative_allele, na.rm=T),
+         prop_AD = round(allelic_dropout/total_SNPs, 3), 
+         prop_AltAl = round(alternative_allele/total_SNPs,3))
+
+
+geno_error2 <- 
+  geno_error %>% 
+  separate(sample_pair, into=c("IID1", "IID2"), sep=":", remove=F) %>% 
+  separate(IID1, into =c("WG_ID1", "Plate1"), sep="_", remove=F)%>% 
+  separate(IID2, into =c("WG_ID2", "Plate2"), sep="_", remove=F) %>% 
+  mutate(WG_ID1 = gsub("[a-z]$", "", WG_ID1),
+         WG_ID2 = gsub("[a-z]$", "", WG_ID2)) %>% 
+  mutate(Pairwise_plate = case_when(Plate1 == "46" & Plate2 == "46" ~ "Both_RZSS46",
+                                    Plate1 == "46" | Plate2 == "46" ~ "One_RZSS46",
+                                    TRUE ~ "Both_other"
+                                    ))
+```
+
+Allelic dropout on RZSS 46 compared to other libraries:
+
+```{r, eval=T, fig.width=5, fig.height=3.5, fig.cap="Proportion of SNPs exhibiting allelic dropout, separated according to the presence of one out of a pair on library RZSS46. Note that there are multiple comparisons including the same sample (the partner sample differs) in each category."}
+geno_error2 %>%
+  ggplot()+
+  geom_boxplot(aes(Pairwise_plate, prop_AD), fill="transparent")+
+  geom_jitter(aes(Pairwise_plate, prop_AD), width=0.2, size=3)+
+  ylab("Proportion of allelic dropout")+
+  theme(axis.title.x = element_blank())
+
+```
+
+
+Overall genotyping rates:
+
+```{r, eval=T}
+geno_error2 %>% 
+  summarise(mean_SNPs = mean(total_SNPs),
+            mean_propAD = mean(prop_AD),
+            mean_propAltAl = mean(prop_AltAl, na.rm=T)) %>% 
+  kable(caption = "Average genotyping error rates. Mean_SNPs is the mean number of SNPs genotyped in both repeats, mean_propAD is the mean proportion of presumed allelic dropout, and mean_propAltAl is the mean proportion of SNPs for which alternative homozygotes were detected in the two individuals.")
+```
+
+## Remove repeats
+
+```{r, eval=F}
+reps_imiss <- 
+  fread("3.SNP_QC/2.Repeated_individuals/ADX.reps.imiss") %>% 
+  left_join(reps_simple) %>% 
+  convert_ID(TMP_ID) 
+
+#~ select the highest performing sample for each repeat
+keep <- 
+  reps_imiss %>% 
+  group_by(WG_ID) %>% 
+  summarise(To_keep = min(F_MISS)) %>% 
+  mutate(F_MISS = To_keep) %>% 
+  left_join(reps_imiss)
+
+#~ select the lower performing samples. Swap ADX252 & ADX254 as genotyping rate differences were minimal and ADX252 is most likely associated with the wrong Tunisian ID. 
+
+reps_imiss %>% 
+  filter(!(IID %in% keep$IID)) %>% 
+  filter(IID != "ADX254_37") %>% 
+  select(FID, IID) %>% 
+  rbind(data.frame(FID = c("TUNISIA"), IID = c("ADX252_37"))) %>% 
+  write.table("3.SNP_QC/2.Repeated_individuals/ADX_reps_to_remove.txt",
+              col.names = F, row.names= F, quote=F, sep="\t")
+
+
+system("cmd", input=paste0("plink --file 3.SNP_QC/1.BasicFilt/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv --aec --remove  3.SNP_QC/2.Repeated_individuals/ADX_reps_to_remove.txt --pca --missing --recode --out 3.SNP_QC/2.Repeated_individuals/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps")) 
+#278 samples + 4572 SNPs
+```
+
+
+# HWE and Linkage disequilirbium
+
+
+
+```{r, eval=F}
+#~ run the hwe & linkage analysis per population
+dir.create("3.SNP_QC/3.HWE")
+
+for(i in (unique(pops2$Pop_country))){
+  write.table(i,
+              paste0("3.SNP_QC/3.HWE/pop_", i, ".txt"))
+  
+  system("cmd", input=paste0("plink --file 3.SNP_QC/2.Repeated_individuals/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps --aec --keep-fam 3.SNP_QC/3.HWE/pop_",i, ".txt --maf 0.0001 --hardy --r2 --ld-window-kb 50000 --ld-window-r2 0 --out 3.SNP_QC/3.HWE/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps_",i))
+}
+
+```
+
+Firstly HWE. 
+```{r, eval=T}
+#~ import the hwe files
+hwe <- 
+  list.files(path = "3.SNP_QC/3.HWE/",
+           pattern = "*.hwe",
+           full.names = TRUE) %>% 
+  setNames(nm = .) %>% 
+    map_df(~fread(.), .id = "file_name") %>% 
+  mutate(Pop = gsub(".hwe", "", file_name),
+         Pop = gsub("3.SNP_QC\\/3.HWE\\/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps_", "", Pop)) %>% 
+  select(-file_name)
+
+# apply multiple testing corrections
+hwe_corrections <- data.frame(
+  pop = character(),
+  CHR = integer(),
+  SNP  =character() ,
+  A1  = character(),
+  A2  = character(),
+  GENO = character(),
+  O.HET.  = numeric(),
+  E.HET. = numeric(),
+  P = numeric(),
+  p_bonfSeq = numeric(),
+  p_FDR = numeric()
+)
+
+
+for(i in (unique(pops2$Pop_country))){
+  hwe1 <- subset(hwe, Pop == i) %>%
+    select(-TEST) %>%
+    mutate(p_Holm = p.adjust(P, method = "holm", n = length(P))) %>%
+    mutate(p_FDR = p.adjust(P, method = "fdr", n = length(P)))%>%
+    mutate(p_BY = p.adjust(P, method = "BY", n = length(P)))
+  
+  hwe_corrections <- rbind(hwe_corrections, hwe1)  
+}
+
+rm(hwe1)
+
+hwe_corrections <- hwe_corrections %>%
+  mutate(Sig_Holm = ifelse(hwe_corrections$p_Holm > 0.05, NA, hwe_corrections$p_Holm)) %>%
+  mutate(Sig_FDR = ifelse(hwe_corrections$p_FDR > 0.05, NA, hwe_corrections$p_FDR)) %>%
+  mutate(Sig_BY = ifelse(hwe_corrections$p_BY > 0.05, NA, hwe_corrections$p_BY))
+
+#~ using BY correction as very similar to Holm but slightly more conservative. 
+hwe_pops_BY <- 
+  hwe_corrections %>% 
+  select(SNP, Pop, Sig_BY) %>% 
+    mutate(BY = case_when(Sig_BY >0 ~ "Yes")) %>% 
+    select(-Sig_BY) %>% 
+    pivot_wider(id_cols = SNP, names_from = Pop, values_from = BY) %>% 
+    mutate(N_pops = rowSums(.=="Yes",na.rm=T))
+
+hwe_pops_BY %>% count(N_pops) %>% kable(caption = "Number of populations that a SNP was detected as out of HWE in after bonferroni style BY correction")
+```
+
+
+```{r, eval=F}
+hwe_pops_BY %>% 
+  filter(N_pops > 1) %>% 
+  select(SNP) %>% 
+  distinct() %>% 
+  write.table("3.SNP_QC/3.HWE/SNPs_exclude.txt",
+               row.names=F, col.names=F, quote=F)
+
+system("cmd", input=paste0("plink --file  3.SNP_QC/2.Repeated_individuals/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps --aec --exclude  3.SNP_QC/3.HWE/SNPs_exclude.txt --recode --out              3.SNP_QC/3.HWE/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe")) # 4524 SNPs
+
+
+```
+
+Next, Linkage Disequilibrium (LD):
+
+```{r, eval=F}
+dir.create("3.SNP_QC/4.LD")
+
+#~ also LD filter 50kb, 10 SNP sliding window, VIF 5 ~= R2 0.8
+system("cmd", input=paste0("plink --file  3.SNP_QC/3.HWE/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe --aec --indep 50 5 5 --out              3.SNP_QC/4.LD/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.indep_50_5_5")) # 2942 SNPs
+
+#~ also LD filter 50kb, 10 SNP sliding window,  R2 0.8
+system("cmd", input=paste0("plink --file  3.SNP_QC/3.HWE/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe --aec --indep-pairwise  50 5 0.8 --out              3.SNP_QC/4.LD/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.indep_50_5_0.8")) # 4379 SNPs
+
+#~ also LD filter 50kb, 10 SNP sliding window, VIF 5 ~= R2 0.5
+system("cmd", input=paste0("plink --file  3.SNP_QC/3.HWE/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe --aec --indep 50 5 2 --out              3.SNP_QC/4.LD/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.indep_50_5_2")) # 1902 SNPs
+
+
+#~ also LD filter 50kb, 10 SNP sliding window, VIF 5 ~= R2 0.2
+system("cmd", input=paste0("plink --file  3.SNP_QC/3.HWE/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe --aec --indep 50 5 1.25 --out              3.SNP_QC/4.LD/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.indep_50_5_1.25"))
+
+#~ also try a very harsh (?) LD filter applied across the populations
+system("cmd", input=paste0("plink --file  3.SNP_QC/3.HWE/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe --aec --indep-pairwise 50 5 0.5 --out              3.SNP_QC/4.LD/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.indep_50_5_0.5")) # 4007 SNPs
+
+
+
+# Save the R2 estimates
+system("cmd", input=paste0("plink --file  3.SNP_QC/3.HWE/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe --aec --freq --missing --r2 --ld-window-kb 50000 --ld-window-r2 0 --out              3.SNP_QC/4.LD/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe"))
+
+
+
+#~ create the list of SNPs to exclude
+snps <-
+  fread("3.SNP_QC/4.LD/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.frq") %>% 
+  left_join(fread("3.SNP_QC/4.LD/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.lmiss")) %>% 
+    
+  mutate(SNP_A = SNP, SNP_B = SNP,
+         MAF_A = MAF, MAF_B = MAF,
+         F_MISS_A = F_MISS, F_MISS_B = F_MISS,)
+
+fread("3.SNP_QC/4.LD/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.ld") %>% 
+  subset(R2 > 0.5) %>% 
+  left_join(select(snps, SNP_A, MAF_A, F_MISS_A)) %>% 
+  left_join(select(snps, SNP_B, MAF_B, F_MISS_B)) %>% 
+  mutate(Lower_maf = ifelse(MAF_A < MAF_B, SNP_A, SNP_B),
+         Lower_geno = ifelse(F_MISS_A > F_MISS_B, SNP_A, SNP_B)) %>% 
+  distinct(Lower_geno) %>% 
+  write.table("3.SNP_QC/4.LD/SNPs_ld0.5.txt",
+              row.names=F, col.names=F, quote=F, sep="\t")
+
+
+system("cmd", input=paste0("plink --file  3.SNP_QC/3.HWE/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe --aec --exclude 3.SNP_QC/4.LD/SNPs_ld0.5.txt --recode --out              3.SNP_QC/4.LD/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.ld")) # 4109 SNPs remaining
+
+
+
+system("cmd", input=paste0("plink --file  3.SNP_QC/4.LD/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.ld --aec --recode A --out              3.SNP_QC/4.LD/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.ld")) # 4109 SNPs remaining
+
+```
+
+
+
+
+# Remove sex chromosome
+
+```{r, eval=F}
+dir.create("3.SNP_QC/5.exclSex23")
+
+fread("3.SNP_QC/4.LD/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.ld.map") %>% 
+  subset(V1 == "HiC_scaffold_23") %>% 
+  select(V2) %>% 
+  write.table("3.SNP_QC/5.exclSex23/exclude_HiC_scaffold_23",
+              row.names=F, col.names=F, quote=F)
+
+system("cmd", input=paste0("plink --file 3.SNP_QC/4.LD/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.ld --aec --exclude 3.SNP_QC/5.exclSex23/exclude_HiC_scaffold_23 --recode --out 3.SNP_QC/5.exclSex23/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.ld.excl23")) #4010 SNPs
+ 
+```
+
+
+
+# 95% geno rate
+
+```{r, eval=F}
+dir.create("3.SNP_QC/6.Geno95")
+
+system("cmd", input=paste0("plink --file  3.SNP_QC/5.exclSex23/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.ld.excl23 --aec --geno 0.05 --recode --out              3.SNP_QC/6.Geno95/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.ld.excl23.geno95")) # 1704 SNPs remaining
+
+
+system("cmd", input=paste0("plink --file  3.SNP_QC/6.Geno95/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.ld.excl23.geno95 --aec --recode A --out              3.SNP_QC/6.Geno95/ADX.minDP5.meanDP15.mac3.geno25.ind50.geno50.pops.IDconv.noReps.hwe.ld.excl23.geno95")) # 1704 SNPs remaining
+```
+
+
+
+# Missingness
+
+```{r, eval=F}
+system("cmd", input=paste0("plink --file  4.analysis/1.Input_files/ADX_geno50 --aec --missing --out 4.analysis/1.Input_files/ADX_geno50")) 
+
+pops <- fread("4.analysis/1.Input_files/ADX_geno50.imiss") %>% 
+  distinct(FID)
+
+dir.create("4.analysis/1.Input_files/1.Missingness50")
+
+for(i in pops$FID){
+  write.table(i, 
+              paste0("4.analysis/1.Input_files/1.Missingness50/", i),
+              row.names=F, col.names=F, quote=F)
+  
+  system("cmd", input=paste0("plink --file  4.analysis/1.Input_files/ADX_geno50 --aec --keep-fam ", paste0("4.analysis/1.Input_files/1.Missingness50/", i), " --missing --out 4.analysis/1.Input_files/1.Missingness50/ADX_geno50_",i)) 
+  
+}
+
+
+missing50 <- 
+  list.files(path = "4.analysis/1.Input_files/1.Missingness50/",
+           pattern = "*.lmiss",
+           full.names = TRUE) %>% 
+  setNames(nm = .) %>% 
+    map_df(~fread(.), .id = "file_name") %>% 
+  mutate(Pop = gsub(".lmiss", "", file_name),
+         Pop = gsub("4.analysis\\/1.Input_files\\/1.Missingness50\\/ADX_geno50_", "", Pop)) %>% 
+  select(-file_name)
+
+
+
+ggplot(missing50)+
+  geom_histogram(aes(F_MISS))+
+  facet_wrap(~Pop)+
+  xlab("Proportion of individuals not genotyped at a SNP")
+```
+
+```{r, eval=F}
+
+dir.create("4.analysis/1.Input_files/2.Missingness95")
+
+for(i in pops$FID){
+  write.table(i, 
+              paste0("4.analysis/1.Input_files/2.Missingness95/", i),
+              row.names=F, col.names=F, quote=F)
+  
+  system("cmd", input=paste0("plink --file  4.analysis/1.Input_files/ADX_geno95 --aec --keep-fam ", paste0("4.analysis/1.Input_files/2.Missingness95/", i), " --missing --out 4.analysis/1.Input_files/2.Missingness95/ADX_geno95_",i)) 
+  
+}
+
+
+missing95 <- 
+  list.files(path = "4.analysis/1.Input_files/2.Missingness95/",
+           pattern = "*.lmiss",
+           full.names = TRUE) %>% 
+  setNames(nm = .) %>% 
+    map_df(~fread(.), .id = "file_name") %>% 
+  mutate(Pop = gsub(".lmiss", "", file_name),
+         Pop = gsub("4.analysis\\/1.Input_files\\/2.Missingness95\\/ADX_geno95_", "", Pop)) %>% 
+  select(-file_name)
+
+
+ggplot(missing95)+
+  geom_histogram(aes(F_MISS))+
+  facet_wrap(~Pop)+
+  xlab("Proportion of individuals not genotyped at a SNP")
+```
+
+
+
+
+# Confirm relatedness with 95% dataset to check for any remaining repeats
+
+```{r, eval=F}
+dir.create("3.SNP_QC/7.Relatedness_check")
+
+#~ input file is the analysis version, excluding the PM samples
+system("cmd", input=paste0("plink --file 4.analysis/1.Input_files/ADX_geno95 --aec --missing --genome --out 3.SNP_QC/7.Relatedness_check/ADX_geno95")) 
+```
+
+```{r, eval = T, fig.height=4, fig.width=4}
+gen <- 
+  fread("3.SNP_QC/7.Relatedness_check/ADX_geno95.genome") %>% 
+  convert_ID(IID1) %>% 
+  rename(WG_ID1 = WG_ID) %>% 
+  convert_ID(IID2) %>% 
+  rename(WG_ID2 = WG_ID)
+
+gen %>% 
+  subset(PI_HAT > 0) %>% 
+  ggplot()+
+  geom_histogram(aes(PI_HAT)) +
+  xlab("Plink relatedness measure (PI_HAT)")
+```
+
+Look at the highly similar individuals:
+
+```{r, eval=T}
+gen %>% 
+  subset(PI_HAT > 0.75)
+```
+
+No evidence of identical individuals 
+
+
+
+
+
+
+
+

@@ -1,0 +1,1033 @@
+---
+title: "WG1705 - Analysis - structure"
+author: "Kara Dicks"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::downcute:
+    self_contained: true
+    toc_depth: 4
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r options, echo=F, message = F, warning = F}
+library(knitr)
+library(rmdformats)
+
+## Global options
+opts_chunk$set(comment=NA, 
+                      prompt=FALSE,
+                      tidy=TRUE,
+                      fig.width=6, 
+                      fig.height=6, 
+                      echo=T,
+                      eval=T, 
+                      warning=FALSE, 
+                      message=F)
+opts_knit$set(width=75)
+
+# Always load
+library(tidyverse)
+# library(openxlsx)
+library(patchwork)
+library(data.table)
+
+
+# ggplot
+library(ggthemr)
+ggthemr(palette = "pale", layout = "clean", 
+        line_weight = 0.7, text_size = 12, type = "outer")
+library(cowplot)
+
+library(adegenet)
+options(scipen=999)
+
+
+library(pophelper)
+
+# Kara
+susbet <- subset
+
+# create a colour palette for use throughout
+
+cols_all <- 
+  data.frame(Pop = c("AAZ",
+"AZA",
+"EAD",
+"EEP",
+"TUNISIA",
+"HNP",
+"JNP",
+"SJNP"),
+colours= c(
+"#977398",
+"#CCC591",
+"#798E87",
+"#C27D38",
+"#306489",
+"#008B8B",
+"#1E90FF",
+"#18186F"
+))
+
+ggCols <- cols_all$colours
+names(ggCols) <- cols_all$Pop
+
+
+# read in population files
+pops <- fread("metadata/ADX_samples_populations_NewIDs.csv") %>% 
+  mutate(INDV = IID)
+
+```
+
+
+# Relaxed LD dataset
+## Using 95% dataset: 1704 SNPs
+
+
+```{bash, eval = F}
+mkdir -p 4.analysis/3.structure_1704/1.input_files
+mkdir 4.analysis/3.structure_1704/2.output_files
+
+
+conda activate SNP_QC
+
+in=4.analysis/1.Input_files/ADX_geno95_TunNP
+
+plink --file $in --aec --recode structure --out $in
+
+sed -i '1,2d' ${in}.recode.strct_in
+
+conda deactivate
+
+cp ${in}.recode.strct_in 4.analysis/3.structure_1704/1.input_files/.
+```
+
+
+
+
+```{r, eval = F}
+# Create the job matrix
+#~~ construct job matrix and write to job file
+options(scipen=999)
+
+nrep <- 5
+up_to_k <- 7
+
+niter <- 1000000
+burnin <- 100000
+
+#~~ define variables for job matrix
+
+k_var <- rep(1:up_to_k, each = nrep)
+ID_var <- as.character(sapply(c(1:up_to_k), function(k) sapply(c(1:nrep), function(x) paste0("T",k, "_", x))))
+
+#~~ make the job matrix
+pop <- "1,2,3,4,5,6,7"
+
+stru_jobs <- matrix(c(ID_var, rep(pop, nrep * up_to_k), k_var, rep(burnin, nrep * up_to_k),
+                      rep(niter, nrep * up_to_k)), nrow = nrep * up_to_k)
+
+# write each value of k to a different file to speed up analysis
+
+for(i in 1:10){
+  data.frame(stru_jobs) %>% 
+    subset(X3 == i) %>% 
+    write.table(paste0("4.analysis/3.structure_1704/2.output_files/stru_jobs_",i, ".txt"),
+                row.names=F, col.names = F, quote=F, sep=" ")
+}
+
+
+```
+
+
+
+```{bash, eval = F}
+# Now manually edit the .R files
+
+nohup Rscript scripts/4.3_structure_1704//run_structure_k2.R &> scripts/4.3_structure_1704//run_structure_k2.nohup.out &
+
+nohup Rscript scripts/4.3_structure_1704//run_structure_k3.R &> scripts/4.3_structure_1704//run_structure_k3.nohup.out &
+
+nohup Rscript scripts/4.3_structure_1704//run_structure_k4.R &> scripts/4.3_structure_1704//run_structure_k4.nohup.out &
+
+nohup Rscript scripts/4.3_structure_1704//run_structure_k5.R &> scripts/4.3_structure_1704//run_structure_k5.nohup.out &
+
+nohup Rscript scripts/4.3_structure_1704//run_structure_k6.R &> scripts/4.3_structure_1704//run_structure_k6.nohup.out &
+
+nohup Rscript scripts/4.3_structure_1704//run_structure_k7.R &> scripts/4.3_structure_1704//run_structure_k7.nohup.out &
+
+```
+
+### Visualising results
+
+```{r}
+
+sfiles <- list.files("4.analysis/3.structure_1704/2.output_files",full.names = T, pattern = "_f")
+slist <- readQ(files = sfiles, filetype="structure", indlabfromfile = T)
+
+tr1 <- tabulateQ(qlist=slist)
+sr1 <- summariseQ(tr1)
+
+em <- evannoMethodStructure(data=sr1)
+p <- evannoMethodStructure(data=sr1,exportplot=F,returnplot=T,returndata=F,basesize=12,linesize=0.7)
+gridExtra::grid.arrange(p)
+# manual save 700wide x 900 tall
+```
+
+
+
+```{r, eval = F}
+clumppExport(qlist=slist,  exportpath="4.analysis/3.structure_1704/2.output_files/")
+```
+
+```{bash, eval = F}
+# run clump to summarise repeats
+
+for i in {2..7};
+do
+cp ~/tools/CLUMPP_Linux64.1.1.2/CLUMPP ./4.analysis/3.structure_1704/2.output_files/pop_K${i}/.
+done
+
+cd 4.analysis/3.structure_1704/2.output_files
+
+for i in {2..7};
+do
+cd pop_K${i}
+./CLUMPP
+cp pop_K${i}-combined-merged.txt ../.
+rm CLUMPP
+cd ..
+done
+
+cd ../../..
+
+
+```
+
+
+
+
+
+```{r}
+
+# now re-run the code with summariesed files
+ids <- fread("4.analysis/3.structure_1704/2.output_files/results_job_T2_1_q") 
+
+
+sfiles <- list.files("4.analysis/3.structure_1704/2.output_files",full.names = T, pattern = "-combined-merged.txt")
+slist <- readQ(files = sfiles, indlabfromfile = T)
+
+for(i in seq(2:4)){
+rownames(slist[[i]]) <- ids$V1
+}
+
+#Change the names of datasets
+number_clusters <- lengths(slist) 
+names(slist) <- paste("K=", number_clusters, sep="")
+
+attr(slist$`K=2`, "ind") <- ids$V1
+attr(slist$`K=3`, "ind") <- ids$V1
+attr(slist$`K=4`, "ind") <- ids$V1
+attr(slist$`K=5`, "ind") <- ids$V1
+attr(slist$`K=6`, "ind") <- ids$V1
+attr(slist$`K=7`, "ind") <- ids$V1
+
+tr1 <- tabulateQ(qlist=slist)
+sr1 <- summariseQ(tr1)
+
+
+```
+
+```{r, eval=T}
+# read in populations
+pops_stru <- fread("metadata/ADX_samples_populations_NewIDs.csv") %>% 
+  select(IID, Pop_country, Pop_NP) %>% 
+  rename(V1 = IID)
+
+pops_stru <- ids %>% 
+  select(V1) %>% 
+  left_join(pops_stru) %>% 
+  mutate(Pop_NP = gsub("AZA", "SSP", Pop_NP),
+         Pop_country = gsub("AZA", "SSP", Pop_country))
+```
+
+
+```{r}
+slist1 <- alignK(slist)
+colours <- c("#006E82","#FA78FA","#8214A0","#00A0FA","#14D2DC","#005AC8","#AA0A3C","#FA7850","#0AB45A","#F0F032","#A0FA82","#FAE6BE")
+
+
+
+k2_4_plot <- 
+  plotQ(slist1[c("K=2","K=3", "K=4")],
+        imgoutput="join",
+        exportplot = FALSE, 
+        returnplot = TRUE,
+        basesize=16, 
+        clustercol=colours,
+        splab = c("K=2","K=3", "K=4"),
+        showlegend = TRUE, legendpos = "right", 
+        legendkeysize = 8, legendtextsize = 12,
+        showdiv=T, 
+        divsize = 0.5,
+        divcol="black", divtype = 1,
+        divgrp = "Pop_NP",
+        showyaxis=F,
+        showticks=F,
+        grplab=pops_stru,
+        selgrp="Pop_country",
+        subsetgrp = c("AAZ", "EAD", "SSP", "EEP", "TUNISIA"),
+        grplabheight = 2,
+        ordergrp=T,
+        grplabsize=6,
+        showindlab=FALSE
+        )
+
+
+
+
+plot_k2_k4 <- cowplot::plot_grid(k2_4_plot$plot[[1]])
+
+plot_k2_k4
+```
+```{r, eval = F}
+ggsave2("4.analysis/3.structure_1704/2.output_files/plot_k2_k4.svg",
+        plot_k2_k4,
+        width=30, height = 22, units = "cm")
+```
+
+
+```{r}
+slist1 <- alignK(slist)
+colours <- c("#006E82","#FA78FA","#8214A0","#00A0FA","#14D2DC","#005AC8","#AA0A3C","#FA7850","#0AB45A","#F0F032","#A0FA82","#FAE6BE")
+
+
+
+k2_7_plot <- 
+  plotQ(slist1[c("K=2","K=3", "K=4", "K=5", "K=6", "K=7")],
+        imgoutput="join",
+        exportplot = FALSE, 
+        returnplot = TRUE,
+        basesize=16, 
+        clustercol=colours,
+        splab = c("K=2","K=3", "K=4", "K=5", "K=6", "K=7"),
+        showlegend = TRUE, legendpos = "right", 
+        legendkeysize = 8, legendtextsize = 12,
+        showdiv=T, 
+        divsize = 0.5,
+        divcol="black", divtype = 1,
+        divgrp = "Pop_NP",
+        showyaxis=F,
+        showticks=F,
+        grplab=pops_stru,
+        selgrp="Pop_country",
+        subsetgrp = c("AAZ", "EAD", "SSP", "EEP", "TUNISIA"),
+        grplabheight = 2,
+        ordergrp=T,
+        grplabsize=6,
+        showindlab=FALSE,
+        )
+
+
+
+
+plot_k2_k7 <- cowplot::plot_grid(k2_7_plot$plot[[1]])
+
+plot_k2_k7
+```
+```{r, eval = F}
+ggsave2("4.analysis/3.structure_1704/2.output_files/plot_k2_k7.svg",
+        plot_k2_k7,
+        width=30, height = 22, units = "cm")
+ggsave2("4.analysis/3.structure_1704/2.output_files/plot_k2_k7.png",
+        plot_k2_k7,
+        width=30, height = 22, units = "cm")
+
+```
+
+## Using 95% dataset exclTUN
+
+```{bash, eval = F}
+mkdir -p 4.analysis/3.structure_1704_exTUN/1.input_files
+mkdir 4.analysis/3.structure_1704_exTUN/2.output_files
+
+
+conda activate SNP_QC
+
+echo "TUNISIA" > 4.analysis/3.structure_1704_exTUN/1.input_files/excl_TUN
+
+in=4.analysis/1.Input_files/ADX_geno95
+out=4.analysis/3.structure_1704_exTUN/1.input_files/ADX_geno95_exTun
+
+plink --file $in --aec --remove-fam 4.analysis/3.structure_1704_exTUN/1.input_files/excl_TUN --maf 0.00001 --recode --out $out #1638 SNPs, 181 inds
+
+plink --file $out --aec --recode structure --out $out
+
+sed -i '1,2d' ${out}.recode.strct_in
+
+conda deactivate
+
+```
+
+
+
+
+```{r, eval = F}
+# Create the job matrix
+
+#~~ construct job matrix and write to job file
+options(scipen=999)
+
+nrep <- 5
+up_to_k <- 6
+
+niter <- 1000000
+burnin <- 100000
+
+#~~ define variables for job matrix
+
+k_var <- rep(1:up_to_k, each = nrep)
+ID_var <- as.character(sapply(c(1:up_to_k), function(k) sapply(c(1:nrep), function(x) paste0("T",k, "_", x))))
+
+#~~ make the job matrix
+pop <- "1,2,3,4"
+
+stru_jobs <- matrix(c(ID_var, rep(pop, nrep * up_to_k), k_var, rep(burnin, nrep * up_to_k),
+                      rep(niter, nrep * up_to_k)), nrow = nrep * up_to_k)
+
+for(i in 1:10){
+  data.frame(stru_jobs) %>% 
+    subset(X3 == i) %>% 
+    write.table(paste0("4.analysis/3.structure_1704_exTUN/2.output_files/stru_jobs_",i, ".txt"),
+                row.names=F, col.names = F, quote=F, sep=" ")
+}
+
+
+```
+
+
+
+```{bash, eval = F}
+# Now manually edit the .R files
+
+nohup Rscript scripts/4.3_structure_1704_exclTUN/run_structure_k2.R &> scripts/4.3_structure_1704_exclTUN/run_structure_k2.nohup.out &
+
+nohup Rscript scripts/4.3_structure_1704_exclTUN/run_structure_k3.R &> scripts/4.3_structure_1704_exclTUN/run_structure_k3.nohup.out &
+
+nohup Rscript scripts/4.3_structure_1704_exclTUN/run_structure_k4.R &> scripts/4.3_structure_1704_exclTUN/run_structure_k4.nohup.out &
+
+nohup Rscript scripts/4.3_structure_1704_exclTUN/run_structure_k5.R &> scripts/4.3_structure_1704_exclTUN/run_structure_k5.nohup.out &
+
+```
+
+### Visualising results
+
+```{r}
+sfiles <- list.files("4.analysis/3.structure_1704_exTUN/2.output_files",full.names = T, pattern = "_f")
+slist <- readQ(files = sfiles, filetype="structure", indlabfromfile = T)
+
+tr1 <- tabulateQ(qlist=slist)
+sr1 <- summariseQ(tr1)
+
+em <- evannoMethodStructure(data=sr1)
+p <- evannoMethodStructure(data=sr1,exportplot=F,returnplot=T,returndata=F,basesize=12,linesize=0.7)
+gridExtra::grid.arrange(p)
+# manual save 700wide x 900 tall
+```
+
+
+
+```{r, eval = F}
+clumppExport(qlist=slist,  exportpath="4.analysis/3.structure_1704_exTUN/2.output_files/")
+```
+
+```{bash, eval = F}
+# run clump to summarise repeats
+
+for i in {2..5};
+do
+cp ~/tools/CLUMPP_Linux64.1.1.2/CLUMPP ./4.analysis/3.structure_1704_exTUN/2.output_files/pop_K${i}/.
+done
+
+cd 4.analysis/3.structure_1704_exTUN/2.output_files
+
+for i in {2..5};
+do
+cd pop_K${i}
+./CLUMPP
+cp pop_K${i}-combined-merged.txt ../.
+rm CLUMPP
+cd ..
+done
+
+cd ../../..
+
+
+```
+
+
+
+
+
+```{r}
+
+# now re-run the code with summariesed files
+ids <- fread("4.analysis/3.structure_1704_exTUN/2.output_files/results_job_T2_1_q") 
+
+
+sfiles <- list.files("4.analysis/3.structure_1704_exTUN/2.output_files",full.names = T, pattern = "-combined-merged.txt")
+slist <- readQ(files = sfiles, indlabfromfile = T)
+
+for(i in seq(2:4)){
+rownames(slist[[i]]) <- ids$V1
+}
+
+#Change the names of datasets
+number_clusters <- lengths(slist) 
+names(slist) <- paste("K=", number_clusters, sep="")
+
+attr(slist$`K=2`, "ind") <- ids$V1
+attr(slist$`K=3`, "ind") <- ids$V1
+attr(slist$`K=4`, "ind") <- ids$V1
+attr(slist$`K=5`, "ind") <- ids$V1
+attr(slist$`K=6`, "ind") <- ids$V1
+attr(slist$`K=7`, "ind") <- ids$V1
+
+tr1 <- tabulateQ(qlist=slist)
+sr1 <- summariseQ(tr1)
+
+
+```
+
+```{r, eval=T}
+# read in populations
+pops_stru <- fread("metadata/ADX_samples_populations_NewIDs.csv") %>% 
+  select(IID, Pop_country, Pop_NP) %>% 
+  rename(V1 = IID)
+
+pops_stru <- ids %>% 
+  select(V1) %>% 
+  left_join(pops_stru) %>% 
+  mutate(Pop_NP = gsub("AZA", "SSP", Pop_NP),
+         Pop_country = gsub("AZA", "SSP", Pop_country))
+```
+
+
+```{r}
+slist1 <- alignK(slist)
+colours <- c("#006E82","#FA78FA","#8214A0","#00A0FA","#14D2DC","#005AC8","#AA0A3C","#FA7850","#0AB45A","#F0F032","#A0FA82","#FAE6BE")
+
+
+
+k2_5_plot <- 
+  plotQ(slist1[c("K=2","K=3", "K=4", "K=5")],
+        imgoutput="join",
+        exportplot = FALSE, 
+        returnplot = TRUE,
+        basesize=16, 
+        clustercol=colours,
+        splab = c("K=2","K=3", "K=4", "K=5"),
+        showlegend = TRUE, legendpos = "right", 
+        legendkeysize = 8, legendtextsize = 12,
+        showdiv=T, 
+        divsize = 0.5,
+        divcol="black", divtype = 1,
+        divgrp = "Pop_NP",
+        showyaxis=F,
+        showticks=F,
+        grplab=pops_stru,
+        selgrp="Pop_country",
+        subsetgrp = c("AAZ", "EAD", "SSP", "EEP"),
+        grplabheight = 2,
+        ordergrp=T,
+        grplabsize=6,
+        showindlab=FALSE
+        )
+
+
+
+
+plot_k2_k5 <- cowplot::plot_grid(k2_5_plot$plot[[1]])
+
+plot_k2_k5
+```
+```{r, eval = F}
+ggsave2("4.analysis/3.structure_1704_exTUN/2.output_files/plot_k2_k5.svg",
+        plot_k2_k5,
+        width=30, height = 22, units = "cm")
+```
+
+
+
+
+# Stringent LD dataset
+## Using 95% dataset: 774 SNPs
+
+This uses the same SNP dataset as Admixture, which is the stringent LD data set.
+
+
+```{bash, eval=F}
+conda activate SNP_QC
+
+in=4.analysis/1.Input_files/ADX_geno95_TunNP_LDprune
+
+plink --file $in --chr-set 30 --recode structure --out $in
+
+sed -i '1,2d' ${in}.recode.strct_in
+
+conda deactivate
+
+cp ${in}.recode.strct_in 4.analysis/3.structure_ld/1.input_files/.
+```
+
+
+
+
+```{r, eval = F}
+# Create the job matrix
+# (adapted from Emily Humble's Seal Rad script)
+
+#~~ construct job matrix and write to job file
+options(scipen=999)
+
+nrep <- 5
+up_to_k <- 7
+
+niter <- 1000000
+burnin <- 100000
+
+#~~ define variables for job matrix
+
+k_var <- rep(1:up_to_k, each = nrep)
+ID_var <- as.character(sapply(c(1:up_to_k), function(k) sapply(c(1:nrep), function(x) paste0("T",k, "_", x))))
+
+#~~ make the job matrix
+pop <- "1,2,3,4,5,6,7"
+
+stru_jobs <- matrix(c(ID_var, rep(pop, nrep * up_to_k), k_var, rep(burnin, nrep * up_to_k),
+                      rep(niter, nrep * up_to_k)), nrow = nrep * up_to_k)
+
+# write each value of k to a different file to speed up analysis
+
+for(i in 1:7){
+  data.frame(stru_jobs) %>% 
+    subset(X3 == i) %>% 
+    write.table(paste0("4.analysis/3.structure_ld/2.output_files/stru_jobs_",i, ".txt"),
+                row.names=F, col.names = F, quote=F, sep=" ")
+}
+
+
+# Now manually edit the .R files
+```
+
+
+```{bash, eval = F}
+nohup Rscript 4.3_structure_stringent_LD/run_structure_k2.R &> 4.3_structure_stringent_LD/run_structure_k2.nohup.out &
+
+nohup Rscript 4.3_structure_stringent_LD/run_structure_k3.R &> 4.3_structure_stringent_LD/run_structure_k3.nohup.out &
+
+nohup Rscript 4.3_structure_stringent_LD/run_structure_k4.R &> 4.3_structure_stringent_LD/run_structure_k4.nohup.out &
+
+nohup Rscript 4.3_structure_stringent_LD/run_structure_k5.R &> 4.3_structure_stringent_LD/run_structure_k5.nohup.out &
+
+nohup Rscript 4.3_structure_stringent_LD/run_structure_k6.R &> 4.3_structure_stringent_LD/run_structure_k6.nohup.out &
+
+nohup Rscript 4.3_structure_stringent_LD/run_structure_k7.R &> 4.3_structure_stringent_LD/run_structure_k7.nohup.out &
+
+
+```
+
+### Visualising results
+
+```{r}
+sfiles <- list.files("4.analysis/3.structure_ld/2.output_files",full.names = T, pattern = "_f")
+slist <- readQ(files = sfiles, filetype="structure", indlabfromfile = T)
+
+tr1 <- tabulateQ(qlist=slist)
+sr1 <- summariseQ(tr1)
+
+em <- evannoMethodStructure(data=sr1)
+p <- evannoMethodStructure(data=sr1,exportplot=F,returnplot=T,returndata=F,basesize=12,linesize=0.7)
+gridExtra::grid.arrange(p)
+# manual save 700wide x 900 tall
+```
+
+
+
+```{r, eval = F}
+clumppExport(qlist=slist,  exportpath="4.analysis/3.structure_ld/2.output_files/")
+```
+
+```{bash, eval = F}
+# run clump to summarise repeats
+
+for i in {2..7};
+do
+cp ~/tools/CLUMPP_Linux64.1.1.2/CLUMPP ./4.analysis/3.structure_ld/2.output_files/pop_K${i}/.
+done
+
+cd 4.analysis/3.structure_ld/2.output_files
+
+for i in {2..7};
+do
+cd pop_K${i}
+./CLUMPP
+cp pop_K${i}-combined-merged.txt ../.
+rm CLUMPP
+cd ..
+done
+
+cd ../../..
+
+
+```
+
+
+
+
+
+```{r}
+
+# now re-run the code with summariesed files
+ids <- fread("4.analysis/3.structure_ld/2.output_files/results_job_T2_1_q") 
+
+
+sfiles <- list.files("4.analysis/3.structure_ld/2.output_files",full.names = T, pattern = "-combined-merged.txt")
+slist <- readQ(files = sfiles, indlabfromfile = T)
+
+for(i in seq(1:5)){
+rownames(slist[[i]]) <- ids$V1
+}
+
+#Change the names of datasets
+number_clusters <- lengths(slist) 
+names(slist) <- paste("K=", number_clusters, sep="")
+
+attr(slist$`K=2`, "ind") <- ids$V1
+attr(slist$`K=3`, "ind") <- ids$V1
+attr(slist$`K=4`, "ind") <- ids$V1
+attr(slist$`K=5`, "ind") <- ids$V1
+attr(slist$`K=6`, "ind") <- ids$V1
+attr(slist$`K=7`, "ind") <- ids$V1
+
+tr1 <- tabulateQ(qlist=slist)
+sr1 <- summariseQ(tr1)
+
+
+```
+
+```{r, eval=T}
+# read in populations
+pops_stru <- fread("metadata/ADX_samples_populations_NewIDs.csv") %>% 
+  select(IID, Pop_country, Pop_NP) %>% 
+  rename(V1 = IID)
+
+pops_stru <- ids %>% 
+  select(V1) %>% 
+  left_join(pops_stru) %>% 
+  mutate(Pop_NP = gsub("AZA", "SSP", Pop_NP),
+         Pop_country = gsub("AZA", "SSP", Pop_country))
+```
+
+
+```{r}
+slist1 <- alignK(slist)
+colours <- c("#006E82","#FA78FA","#8214A0","#00A0FA","#14D2DC","#005AC8","#AA0A3C","#FA7850","#0AB45A","#F0F032","#A0FA82","#FAE6BE")
+
+
+
+k2_7_plot <- 
+  plotQ(slist1[c("K=2","K=3", "K=4", "K=5", "K=6", "K=7")],
+        imgoutput="join",
+        exportplot = FALSE, 
+        returnplot = TRUE,
+        basesize=16, 
+        clustercol=colours,
+        splab = c("K=2","K=3", "K=4", "K=5", "K=6", "K=7"),
+        showlegend = TRUE, legendpos = "right", 
+        legendkeysize = 8, legendtextsize = 12,
+        showdiv=T, 
+        divsize = 0.5,
+        divcol="black", divtype = 1,
+        divgrp = "Pop_NP",
+        showyaxis=F,
+        showticks=F,
+        grplab=pops_stru,
+        selgrp="Pop_country",
+        subsetgrp = c("AAZ", "EAD", "SSP", "EEP", "TUNISIA"),
+        grplabheight = 2,
+        ordergrp=T,
+        grplabsize=6,
+        showindlab=FALSE,
+        )
+
+
+
+plot_k2_k7 <- cowplot::plot_grid(k2_7_plot$plot[[1]])
+
+plot_k2_k7
+```
+```{r, eval = F}
+ggsave2("4.analysis/3.structure_ld/2.output_files/plot_k2_k7.svg",
+        plot_k2_k7,
+        width=30, height = 22, units = "cm")
+ggsave2("4.analysis/3.structure_ld/2.output_files/plot_k2_k7.png",
+        plot_k2_k7,
+        width=30, height = 22, units = "cm")
+```
+
+
+
+```{r}
+
+k3_6_plot <- 
+  plotQ(slist1[c("K=3", "K=4", "K=5", "K=6")],
+        imgoutput="join",
+        exportplot = FALSE, 
+        returnplot = TRUE,
+        basesize=16, 
+        clustercol=colours,
+        splab = c("K=3", "K=4", "K=5", "K=6"),
+        showlegend = TRUE, legendpos = "right", 
+        legendkeysize = 8, legendtextsize = 12,
+        showdiv=T, 
+        divsize = 0.5,
+        divcol="black", divtype = 1,
+        divgrp = "Pop_NP",
+        showyaxis=F,
+        showticks=F,
+        grplab=pops_stru,
+        selgrp="Pop_country",
+        subsetgrp = c("AAZ", "EAD", "SSP", "EEP", "TUNISIA"),
+        grplabheight = 2,
+        ordergrp=T,
+        grplabsize=6,
+        showindlab=FALSE,
+        )
+
+
+plot_k3_k6 <- cowplot::plot_grid(k3_6_plot$plot[[1]])
+
+plot_k3_k6
+```
+
+```{r, eval = F}
+ggsave2("4.analysis/3.structure_ld/2.output_files/plot_k3_k6.svg",
+        plot_k3_k6,
+        width=30, height = 22, units = "cm")
+ggsave2("4.analysis/3.structure_ld/2.output_files/plot_k3_k6.png",
+        plot_k3_k6,
+        width=30, height = 22, units = "cm")
+```
+
+
+
+## Using 95% genotyping rate excluding Tunisia
+ 
+```{bash, eval = F}
+conda activate SNP_QC
+
+in=4.analysis/6.2.admixture_LDprune95_exTUN/ADX_geno95_TunNP_LDprune_exclTUN
+out=4.analysis/3.structure_ld_exclTUN
+
+mkdir -p $out/1.input_files
+mkdir -p $out/2.output_files
+
+plink --bfile $in --chr-set 30 --recode structure --out ${out}/1.input_files/ADX_geno95_TunNP_LDprune_exclTUN
+
+sed -i '1,2d' ${out}/1.input_files/ADX_geno95_TunNP_LDprune_exclTUN.recode.strct_in
+
+conda deactivate
+```
+
+```{r, eval = F}
+# Create the job matrix
+
+#~~ construct job matrix and write to job file
+options(scipen=999)
+
+nrep <- 5
+up_to_k <- 7
+
+niter <- 1000000
+burnin <- 100000
+
+#~~ define variables for job matrix
+
+k_var <- rep(1:up_to_k, each = nrep)
+ID_var <- as.character(sapply(c(1:up_to_k), function(k) sapply(c(1:nrep), function(x) paste0("T",k, "_", x))))
+
+#~~ make the job matrix
+pop <- "1,2,3,4,5,6,7"
+
+stru_jobs <- matrix(c(ID_var, rep(pop, nrep * up_to_k), k_var, rep(burnin, nrep * up_to_k),
+                      rep(niter, nrep * up_to_k)), nrow = nrep * up_to_k)
+
+# write each value of k to a different file to speed up analysis
+
+for(i in 1:7){
+  data.frame(stru_jobs) %>% 
+    subset(X3 == i) %>% 
+    write.table(paste0("4.analysis/3.structure_ld_exclTUN/2.output_files/stru_jobs_",i, ".txt"),
+                row.names=F, col.names = F, quote=F, sep=" ")
+}
+
+
+# Now manually edit the .R files
+```
+
+
+
+```{bash, eval = F}
+nohup Rscript scripts/4.3_structure_stringent_LD_exclTUN/run_structure_k2.R &> scripts/4.3_structure_stringent_LD_exclTUN/run_structure_k2.nohup.out &
+
+nohup Rscript scripts/4.3_structure_stringent_LD_exclTUN/run_structure_k3.R &> scripts/4.3_structure_stringent_LD_exclTUN/run_structure_k3.nohup.out &
+
+nohup Rscript scripts/4.3_structure_stringent_LD_exclTUN/run_structure_k4.R &> scripts/4.3_structure_stringent_LD_exclTUN/run_structure_k4.nohup.out &
+
+nohup Rscript scripts/4.3_structure_stringent_LD_exclTUN/run_structure_k5.R &> scripts/4.3_structure_stringent_LD_exclTUN/run_structure_k5.nohup.out &
+
+nohup Rscript scripts/4.3_structure_stringent_LD_exclTUN/run_structure_k6.R &> scripts/4.3_structure_stringent_LD_exclTUN/run_structure_k6.nohup.out &
+
+nohup Rscript scripts/4.3_structure_stringent_LD_exclTUN/run_structure_k7.R &> scripts/4.3_structure_stringent_LD_exclTUN/run_structure_k7.nohup.out &
+
+```
+
+
+### Visualising results
+
+```{r}
+
+sfiles <- list.files("4.analysis/3.structure_ld_exclTUN/2.output_files",full.names = T, pattern = "_f")
+slist <- readQ(files = sfiles, filetype="structure", indlabfromfile = T)
+
+tr1 <- tabulateQ(qlist=slist)
+sr1 <- summariseQ(tr1)
+
+em <- evannoMethodStructure(data=sr1)
+p <- evannoMethodStructure(data=sr1,exportplot=F,returnplot=T,returndata=F,basesize=12,linesize=0.7)
+gridExtra::grid.arrange(p)
+# manual save 700wide x 900 tall
+```
+
+```{r, eval = F}
+clumppExport(qlist=slist,  exportpath="4.analysis/3.structure_ld_exclTUN//2.output_files/")
+```
+
+```{bash, eval = F}
+# run clump to summarise repeats
+
+for i in {2..7};
+do
+cp ~/tools/CLUMPP_Linux64.1.1.2/CLUMPP ./4.analysis/3.structure_ld_exclTUN/2.output_files/pop_K${i}/.
+done
+
+cd 4.analysis/3.structure_ld_exclTUN/2.output_files
+
+for i in {2..7};
+do
+cd pop_K${i}
+./CLUMPP
+cp pop_K${i}-combined-merged.txt ../.
+rm CLUMPP
+cd ..
+done
+
+cd ../../..
+
+
+```
+
+
+```{r}
+
+# now re-run the code with summariesed files
+ids <- fread("4.analysis/3.structure_ld_exclTUN/2.output_files/results_job_T2_1_q") 
+
+
+sfiles <- list.files("4.analysis/3.structure_ld_exclTUN/2.output_files",full.names = T, pattern = "-combined-merged.txt")
+slist <- readQ(files = sfiles, indlabfromfile = T)
+
+for(i in seq(1:5)){
+rownames(slist[[i]]) <- ids$V1
+}
+
+#Change the names of datasets
+number_clusters <- lengths(slist) 
+names(slist) <- paste("K=", number_clusters, sep="")
+
+attr(slist$`K=2`, "ind") <- ids$V1
+attr(slist$`K=3`, "ind") <- ids$V1
+attr(slist$`K=4`, "ind") <- ids$V1
+attr(slist$`K=5`, "ind") <- ids$V1
+attr(slist$`K=6`, "ind") <- ids$V1
+attr(slist$`K=7`, "ind") <- ids$V1
+
+tr1 <- tabulateQ(qlist=slist)
+sr1 <- summariseQ(tr1)
+
+
+```
+
+```{r, eval=T}
+# read in populations
+pops_stru <- fread("metadata/ADX_samples_populations_NewIDs.csv") %>% 
+  select(IID, Pop_country, Pop_NP) %>% 
+  rename(V1 = IID)
+
+pops_stru <- ids %>% 
+  select(V1) %>% 
+  left_join(pops_stru) %>% 
+  mutate(Pop_NP = gsub("AZA", "SSP", Pop_NP),
+         Pop_country = gsub("AZA", "SSP", Pop_country))
+```
+
+
+```{r}
+slist1 <- alignK(slist)
+colours <- c("#006E82","#FA78FA","#8214A0","#00A0FA","#14D2DC","#005AC8","#AA0A3C","#FA7850","#0AB45A","#F0F032","#A0FA82","#FAE6BE")
+
+
+
+k2_7_plot <- 
+  plotQ(slist1[c("K=2","K=3", "K=4", "K=5", "K=6", "K=7")],
+        imgoutput="join",
+        exportplot = FALSE, 
+        returnplot = TRUE,
+        basesize=16, 
+        clustercol=colours,
+        splab = c("K=2","K=3", "K=4", "K=5", "K=6", "K=7"),
+        showlegend = TRUE, legendpos = "right", 
+        legendkeysize = 8, legendtextsize = 12,
+        showdiv=T, 
+        divsize = 0.5,
+        divcol="black", divtype = 1,
+        divgrp = "Pop_NP",
+        showyaxis=F,
+        showticks=F,
+        grplab=pops_stru,
+        selgrp="Pop_country",
+        subsetgrp = c("AAZ", "EAD", "SSP", "EEP", "TUNISIA"),
+        grplabheight = 2,
+        ordergrp=T,
+        grplabsize=6,
+        showindlab=FALSE,
+        )
+
+
+
+plot_k2_k7 <- cowplot::plot_grid(k2_7_plot$plot[[1]])
+
+plot_k2_k7
+```
+```{r, eval = F}
+ggsave2("4.analysis/3.structure_ld_exclTUN/2.output_files/plot_k2_k7.svg",
+        plot_k2_k7,
+        width=30, height = 22, units = "cm")
+ggsave2("4.analysis/3.structure_ld_exclTUN/2.output_files/plot_k2_k7.png",
+        plot_k2_k7,
+        width=30, height = 22, units = "cm")
+```

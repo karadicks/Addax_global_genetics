@@ -1,0 +1,10 @@
+name: snakemake
+channels:
+  - bioconda
+  - defaults
+  - conda-forge
+dependencies:
+  - pandas=1.0.5
+  - python=3.8.3
+  - snakemake=5.19.3
+prefix: /exports/eddie/scratch/v1kdick3/anaconda/envs/snakemake

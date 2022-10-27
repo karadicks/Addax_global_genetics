@@ -1,5 +1,5 @@
 ---
-title: "WG1705 - Analysis - structure"
+title: "Addax global genetics - Structure"
 author: "Kara Dicks"
 date: "`r Sys.Date()`"
 output:
@@ -84,9 +84,11 @@ pops <- fread("metadata/ADX_samples_populations_NewIDs.csv") %>%
 
 
 # Relaxed LD dataset
-## Using 95% dataset: 1704 SNPs
+Using 95% dataset: 1704 SNPs
 
+## All populations
 
+### Run Structure
 ```{bash, eval = F}
 mkdir -p 4.analysis/3.structure_1704/1.input_files
 mkdir 4.analysis/3.structure_1704/2.output_files
@@ -348,8 +350,9 @@ ggsave2("4.analysis/3.structure_1704/2.output_files/plot_k2_k7.png",
 
 ```
 
-## Using 95% dataset exclTUN
+## Excluding Tunisia
 
+### Run Structure
 ```{bash, eval = F}
 mkdir -p 4.analysis/3.structure_1704_exTUN/1.input_files
 mkdir 4.analysis/3.structure_1704_exTUN/2.output_files
@@ -564,11 +567,12 @@ ggsave2("4.analysis/3.structure_1704_exTUN/2.output_files/plot_k2_k5.svg",
 
 
 # Stringent LD dataset
-## Using 95% dataset: 774 SNPs
+Using 95% genotyping rate data set: 774 SNPs
 
 This uses the same SNP dataset as Admixture, which is the stringent LD data set.
 
-
+## All populations
+### Run Structure
 ```{bash, eval=F}
 conda activate SNP_QC
 
@@ -825,7 +829,7 @@ ggsave2("4.analysis/3.structure_ld/2.output_files/plot_k3_k6.png",
 
 
 
-## Using 95% genotyping rate excluding Tunisia
+## Excluding Tunisia
  
 ```{bash, eval = F}
 conda activate SNP_QC

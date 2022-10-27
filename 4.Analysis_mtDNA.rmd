@@ -1,0 +1,869 @@
+---
+title: "Addax global genetics - mtDNA & Supplementary file S1"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: flatly
+    highlight: breezedark
+    self_contained: true
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+bibliography: /mnt/profiles/kdicks/Kara/GitHub/Bibtex/library.bib 
+---
+
+```{r options, echo=F, message = F, warning = F, eval = requireNamespace("tidyverse", quietly = TRUE)}
+library(knitr)
+library(rmdformats)
+
+## Global options
+opts_chunk$set(comment=NA, 
+                      prompt=FALSE,
+                      fig.width=6, 
+                      fig.height=6, 
+                      echo=T,
+                      eval=T, 
+                      warning=FALSE, 
+                      message=F)
+opts_knit$set(width=75)
+
+# Always load
+library(tidyverse)
+library(patchwork)
+library(data.table)
+
+
+# ggplot
+library(ggthemr)
+library(patchwork)
+ggthemr(palette = "pale", layout = "clean", 
+        line_weight = 0.7, text_size = 12, type = "outer")
+library(cowplot)
+library(ggrepel)
+
+
+library(adegenet)
+library(pegas)
+
+# colour palette for use throughout
+
+cols_all <- 
+  data.frame(Pop = c("AAZ",
+"AZA",
+"EAD",
+"EEP",
+"TUNISIA",
+"HNP",
+"JNP",
+"SJNP"),
+colours= c(
+"#977398",
+"#CCC591",
+"#798E87",
+"#C27D38",
+"#306489",
+"#008B8B",
+"#1E90FF",
+"#18186F"
+))
+
+
+ggCols <- cols_all$colours
+names(ggCols) <- cols_all$Pop
+
+```
+
+# Mitochondrial DNA analyses
+
+## Methods
+### Laboratory methods
+
+The control region (also known as the D-Loop) was selected as this commonly shows variation within and between populations of a species [@Avise1987]. A 826 bp fragment of the mitochondrial control region was amplified using the primers AdnewF (5'-GCTATAGCCCCACTATCAAC) and AdnewR (5'-GCGGGTTGCTGGTTTCACGC). PCR reactions were performed in 10 μL reactions containing 1.4X DreamTaq™ Hot Start PCR mastermix (contains 2.8 mM Mg++ and 280 µM of each dNTP), 2 µM of each primer and 1 µL of DNA. PCR thermocycling conditions were an initial denaturation of 4 mins at 94 °C; 10 cycles of 94 °C for 30s, 57 °C for 15s and 72 °C for 1min; 33 cycles of 95 °C for 30s, 54 °C 15s and 72 °C for 60s; with a final extension at 72 °C for 10 mins. PCR products were visualised by gel electrophoresis (1% agarose) and, when a single, clear band was detected, the PCR product was cleaned using 20U of Exonulease I (Thermo Scientific™) and 1U of FastAP (Thermo Scientific™) and were sequenced in both directions using BigDye Terminator v3.1 Cycle Sequencing Kit (Applied Biosystems) on a ABI 3730XL genetic analyser.
+
+The Adnew primers occasionally generated multiple PCR fragments, particularly when amplified from blood samples, which subsequently generated unreadable Sanger sequences. Nuclear copies of mitochondrial sequences, NUclear MiTochorndial sequences (NUMTs) are prevalent across eukaryotic genomes [@Bensasson2001, @Hazkani-Covo2010], including mammalian genomes [@Calabrese2017, @Thalmann2004]. In some species, the majority of the mitochondrial genome has been detected intact in NUMTS (e.g. humans - see @Marshall2021 and references within; felines [@Kim2006, @Lopez1994]) The genome of the cow (*Bos taurus*) includes somewhere between 166 and 432 NUMT regions [@Grau2020, @Calabrese2017]. Separating organellar genomes from NUMTs in massively parallel sequencing data can present challenges [@Maude2019], and whole genome resequencing data for scimitar-horned oryx (unpublished) and a divergent mitogenome published on Genbank (accession JN869311) indicates the high likelihood of large NUMTs in the scimitar-horned oryx and possibly Hippotraginae. It is therefore likely that the Adnew primers were co-amplifying organellar and NUMT control region sequences, and the lower mitochondrial to nuclear ratio in blood samples compared to tissue or faecal samples may have increased their prevalence.
+
+Primers were designed to amplify the full-length control region sequence (tRNA-ProF 5'-CCCACTATCAACACCCAAAGC and tRNA-Phe 5'-AGCATTTTCAGTGCCTTGC). Single band amplifications were obtained for a handful of samples but gel electrophoresis and sequencing indicated the continued presence of multiple bands for the majority of previously unsuccessful samples using the Adnew primers. This suggests that the full-length control region is present in a minimum of one nuclear copy.
+
+Consequently, samples were amplified using the Adnew primers using a high-fidelity DNA polymerase, and the PCR fragment corresponding to the true mitochondrial sequence was gel-extracted. PCRs were carried out in 10μL reactions containing 1X Q5 high-fidelity DNA polymerase mastermix (NEB; contains 2 mM Mg++ and 200 µM of each dNTP), 0.5 µM of each primer and 1 µL of DNA (diluted 1:10). PCR thermocycling conditions were an initial denaturation of 4 mins at 98 °C; 10 cycles of 98 °C for 30s, 57 °C for 15s and 72 °C for 1min; 33 cycles of 95 °C for 30s, 54 °C 15s and 72 °C for 60s; with a final extension at 72 °C for 10 mins. All 10 μL of PCR product was run on a 1% agarose gel and extracted using the MinElute Gel Extraction kit (QIAGEN).
+
+All mitochondrial DNA sequences were cleaned using 20U of Exonulease I (Thermo Scientific™) and 1U of FastAP (Thermo Scientific™) and were sequenced in both directions using BigDye Terminator v3.1 Cycle Sequencing Kit (Applied Biosystems) on a ABI 3730XL genetic analyser. Sequences were analysed using Geneious 2019 Prime (<https://www.geneious.com>) as described in the main body of the manuscript. 
+
+### Data analysis
+
+Sequences were aligned using the Geneious aligner and included an additional 12 published control region sequences (GenBank accessions: JN632591 [@Hassanin2012], MZ474955-MZ475965 [@Hempel2021]). Haplotypes were initially identified from an alignment by eye, then matched against a custom BLAST database in Geneious 2019 Prime. The GenBank sequence MZ474957 (museum sample from Sudan) was excluded due to the presence of two degenerate sites within the control region making haplotype determination unreliable; however both our control region data and the mitogenome analysis within @Hempel2021 found that that MZ474957 clusters extremely closely with MZ474955 (museum sample from Sudan), suggesting it is not a novel haplotype. A string of 63 Ns was present in the MZ475964 (museum sample from Libya) sequence (see Suppl. Fig 1); as the missing bases encompassed an invariable region across all other haplotypes, MZ475964 was retained. Multiple methods of accounting for missing data and indels were tested and under all scenarios MZ475965 retained a unique control region haplotype, justifying its retention.
+
+The presence of a 76 bp indel was detected within two haplotypes, with four polymorphic sites within the indel. and in both cases, the indel is an exact copy of the 76 nucleotides preceding it (see Suppl. Fig 1). It could be reliably and repeatedly amplified and unambiguously identified within multiple individuals (AC = 8 samples, L = 2 samples) from both wild collected faecal samples and captive collected blood samples, suggesting it is unlikely to be a NUMT. Small indels are also present within the haplotypes identified here (up to 4 bp in length), with only one being present across multiple haplotypes (a 4bp indel on haplotypes A, AC, F and AJ235310).
+
+The large 76bp indel, in particular, presents a challenge for phylogenetic analyses and diversity estimates because its presence/absence represents a mutational event which, due to the high sequence similarity between the two indel sequences, are unlikely to represent two evolutionary events. However, analytical methods typically consider each nucleotide position independently, treating each polymorphism as an independent evolutionary event and sites containing a gap. Haplotype L is identical to haplotype P outwith the 76 bp indel, and therefore full exclusion of the indel omits evolutionarily informative site and complete deletion of indel sites is inappropriate for these data. We therefore assessed the impact of two methods of indel coding within the R package `Haplotypes` [@Aktas2020]. Firstly, the simple indel coding (sic) method treats an indel as as a missing character but codes each separately following the simple indel coding method. Simulation studies suggested that simple index coding, and the related complex index coding, generate highly similar results which outperform other methods [@Simmons2007]. Secondly, the gaps are coded as a fifth state, under which each base is an independent evolutionary event.  
+
+Statistical parsimony (TCS) haplotype networks [@Templeton1992] were generated using the R pacakge `Pegas` [@Paradis2010]. The data include haplotypes from wild and managed populations, as well as historical samples and we could therefore expect evolutionary intermediate haplotypes to be unsampled. TCS networks can account for unobserved haplotypes [@Paradis2018]. The `Pegas` package does not perform recoding of indels as sic or fifth state, and performs complete exclusion of gaps. Only the 76 bp indel impacted topography of the haplotype networks, and so haplotype networks were generated for each of i) manual recoding of the whole 76 bp region as a single fifth state (imitating sic), ii) manual recoding each nucleotide as a fifth state, and iii) complete exclusion of the indel.
+
+
+
+## Analysis and results
+
+
+```{r}
+# Import the manually identified haplotypes
+haplos <- fread("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021_addax_haplotypes.csv") %>% 
+  mutate(Samples = WG_ID) %>% 
+  filter(Haplotype != "E" & WG_ID != "MZ474957")
+```
+
+
+### Impact of recoding method on haplotype calls
+
+```{r, eval = T}
+fas_in <- "4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs.fasta"
+pop_NP <- fread("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_Pop_NP.txt", header=F) 
+pop_NP <- as.vector(pop_NP$V1)
+fas_in_pops <- "4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_popSeqs.fasta"
+
+adx_normal <- haplotypes::read.fas(file=fas_in)
+haplos_normal <- haplotypes::haplotype(adx_normal, indels = "sic")
+haplos_normal_missing <- haplotypes::haplotype(adx_normal, indels = "missing")
+haplos_normal_5th <- haplotypes::haplotype(adx_normal, indels="5th")
+
+extract_hap_list <- function(haplo_list, indel_method){
+  haps <- names(haplo_list) # extract list of haplotype names from the haplotypes::haplotype *** S4 Object of Class Haplotype ***
+  
+  hap_df <- data.frame(Indel_method = as.character(),
+                       Haplotype_name = as.character(),
+                       Samples = as.character()) # create empty data frame
+for(i in haps){
+  hap_name <- i
+  hap_samples <- haplo_list[[i]]
+  temp_df <- data.frame(Indel_method = indel_method, 
+                        Haplotype_name = hap_name,
+             Samples = hap_samples)
+  hap_df <- rbind(hap_df, temp_df)
+}
+  return(hap_df)
+}
+
+haps_normal <- extract_hap_list(haplos_normal@haplist, "sic") 
+haps_normal_missing <- extract_hap_list(haplos_normal_missing@haplist, "missing")
+haps_normal_5th <- extract_hap_list(haplos_normal_5th@haplist, "5th")
+
+haps_lists <- rbind(haps_normal, haps_normal_missing,haps_normal_5th) %>% 
+  full_join(select(haplos, Samples, Haplotype))
+```
+
+1. Indel recoded as sic
+```{r}
+##############
+#~ Indel recoded as sic
+
+
+# import the sequences and the population list
+fas_in <- "4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A.fasta"
+pop_NP <- fread("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_Pop_NP.txt", header=F) 
+pop_NP <- as.vector(pop_NP$V1)
+
+adx_fas_pegas <-ape::read.dna(fas_in, format = "fasta")
+
+# call the haplotypes
+A_haps <- pegas::haplotype(adx_fas_pegas)
+
+# extract the original haplotypes
+haplos_simple <- select(haplos, WG_ID, Haplotype) %>% rownames_to_column()
+
+# extract the individuals from pegas analysis
+ids <- attr(A_haps, "index")
+names(ids) <-  paste("haplotype", seq(1:25), sep="")
+
+
+haplos_simple <- haplos_simple %>% 
+    mutate(hap_pegas = case_when(rowname %in% ids$haplotype1 ~ "1", 
+                              rowname %in% ids$haplotype2 ~  "2", 
+                              rowname %in% ids$haplotype3 ~  "3", 
+                              rowname %in% ids$haplotype4 ~  "4", 
+                              rowname %in% ids$haplotype5 ~  "5", 
+                              rowname %in% ids$haplotype6 ~  "6", 
+                              rowname %in% ids$haplotype7 ~  "7", 
+                              rowname %in% ids$haplotype8 ~  "8", 
+                              rowname %in% ids$haplotype9 ~  "9", 
+                              rowname %in% ids$haplotype10 ~ "10", 
+                              rowname %in% ids$haplotype11 ~ "11", 
+                              rowname %in% ids$haplotype12 ~ "12", 
+                              rowname %in% ids$haplotype13 ~ "13", 
+                              rowname %in% ids$haplotype14 ~ "14", 
+                              rowname %in% ids$haplotype15 ~ "15", 
+                              rowname %in% ids$haplotype16 ~ "16", 
+                              rowname %in% ids$haplotype17 ~ "17", 
+                              rowname %in% ids$haplotype18 ~ "18", 
+                              rowname %in% ids$haplotype19 ~ "19", 
+                              rowname %in% ids$haplotype20 ~ "20", 
+                              rowname %in% ids$haplotype21 ~ "21", 
+                              rowname %in% ids$haplotype22 ~ "22", 
+                              rowname %in% ids$haplotype23 ~ "23", 
+                              rowname %in% ids$haplotype24 ~ "24", 
+                              rowname %in% ids$haplotype25 ~ "25", 
+                              rowname %in% ids$haplotype26 ~ "26",  
+                              rowname %in% ids$haplotype27 ~ "27",  
+                              
+                              ))
+
+# reorder according to pegas label
+relabel <- count(haplos_simple, Haplotype, hap_pegas) %>% 
+  select(-n) %>% 
+  arrange(as.numeric(hap_pegas))
+
+relabel_haps <- as.vector(relabel$Haplotype)
+
+# recall the haplotypes & make the network
+A_haps <- pegas::haplotype(adx_fas_pegas, label=relabel_haps)
+
+A_haps
+```
+
+
+```{r, eval = T}
+A_Net <- pegas::haploNet(A_haps)
+
+# Create the pie chart labels
+P <- pegas::haploFreq(adx_fas_pegas, fac = pop_NP, haplo = A_haps)
+nt.labs <- attr(A_Net, "labels")
+P <- P[nt.labs, ]
+
+setHaploNetOptions(labels.cex = 1,
+                   mutations.cex = 0.005,
+                   show.mutation=1)
+
+plot(A_Net, 
+     size = (log10(attr(A_Net, "freq"))),
+     scale.ratio=1.75, 
+     pie = P, legend = c(-30,5),
+     show.mutation= 0, 
+     labels=T)
+## manually save plot as svg width = 1400, height = 700
+```
+
+2. Indel as 5th state
+```{r, eval = T}
+###########
+#~ Indel as 5th state
+
+# import the sequences and the population list
+fas_in5th <- "4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_AllA.fasta"
+
+adx_fas_pegas5th <-ape::read.dna(fas_in5th, format = "fasta")
+
+# call the haplotypes
+A_haps5th <- pegas::haplotype(adx_fas_pegas5th)
+
+# extract the individuals from pegas analysis
+ids5th <- attr(A_haps5th, "index")
+names(ids5th) <-  paste("haplotype", seq(1:25), sep="")
+
+
+haplos_simple <- haplos_simple %>% 
+    mutate(hap_pegas_indel_AllA = case_when(rowname %in% ids5th$haplotype1 ~ "1", 
+                              rowname %in% ids5th$haplotype2 ~  "2", 
+                              rowname %in% ids5th$haplotype3 ~  "3", 
+                              rowname %in% ids5th$haplotype4 ~  "4", 
+                              rowname %in% ids5th$haplotype5 ~  "5", 
+                              rowname %in% ids5th$haplotype6 ~  "6", 
+                              rowname %in% ids5th$haplotype7 ~  "7", 
+                              rowname %in% ids5th$haplotype8 ~  "8", 
+                              rowname %in% ids5th$haplotype9 ~  "9", 
+                              rowname %in% ids5th$haplotype10 ~ "10", 
+                              rowname %in% ids5th$haplotype11 ~ "11", 
+                              rowname %in% ids5th$haplotype12 ~ "12", 
+                              rowname %in% ids5th$haplotype13 ~ "13", 
+                              rowname %in% ids5th$haplotype14 ~ "14", 
+                              rowname %in% ids5th$haplotype15 ~ "15", 
+                              rowname %in% ids5th$haplotype16 ~ "16", 
+                              rowname %in% ids5th$haplotype17 ~ "17", 
+                              rowname %in% ids5th$haplotype18 ~ "18", 
+                              rowname %in% ids5th$haplotype19 ~ "19", 
+                              rowname %in% ids5th$haplotype20 ~ "20", 
+                              rowname %in% ids5th$haplotype21 ~ "21", 
+                              rowname %in% ids5th$haplotype22 ~ "22", 
+                              rowname %in% ids5th$haplotype23 ~ "23", 
+                              rowname %in% ids5th$haplotype24 ~ "24", 
+                              rowname %in% ids5th$haplotype25 ~ "25", 
+                              rowname %in% ids5th$haplotype26 ~ "26",  
+                              rowname %in% ids5th$haplotype27 ~ "27",  
+                              
+                              ))
+
+# reorder according to pegas label
+relabel5th <- count(haplos_simple, Haplotype, hap_pegas_indel_AllA) %>% 
+  select(-n) %>% 
+  arrange(as.numeric(hap_pegas_indel_AllA))
+
+relabel_haps5th <- as.vector(relabel5th$Haplotype)
+
+# recall the haplotypes & make the network
+A_haps5th <- pegas::haplotype(adx_fas_pegas5th, label=relabel_haps5th)
+
+A_Net5th <- pegas::haploNet(A_haps5th)
+
+A_Net5th
+```
+
+
+```{r, eval = T}
+# Create the pie chart labels
+P5th <- haploFreq(adx_fas_pegas5th, fac = pop_NP, haplo = A_haps5th)
+nt.labs5th <- attr(A_Net5th, "labels")
+P5th <- P5th[nt.labs5th, ]
+
+setHaploNetOptions(labels.cex = 1,
+                   mutations.cex = 0.005,
+                   show.mutation=1)
+
+plot(A_Net5th, 
+     size = (log10(attr(A_Net5th, "freq"))),
+     scale.ratio=1.75, 
+     pie = P5th, legend = c(-80,-3),
+     show.mutation= 0, 
+     labels=T)
+## manually save plot as svg width = 1400, height = 700
+```
+
+3. Indel as missing
+
+```{r, eval=T}
+##################
+#~ Indel as missing
+
+
+# import the sequences and the population list
+fas_in_miss <- "4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_removed.fasta"
+
+adx_fas_pegas_miss <-ape::read.dna(fas_in_miss, format = "fasta")
+
+# call the haplotypes
+A_haps_miss <- pegas::haplotype(adx_fas_pegas_miss)
+
+# extract the individuals from pegas analysis
+ids_miss <- attr(A_haps_miss, "index")
+names(ids_miss) <-  paste("haplotype", seq(1:24), sep="")
+
+
+haplos_simple <- haplos_simple %>% 
+    mutate(hap_pegas_indel_rem = case_when(rowname %in% ids_miss$haplotype1 ~ "1", 
+                              rowname %in% ids_miss$haplotype2 ~  "2", 
+                              rowname %in% ids_miss$haplotype3 ~  "3", 
+                              rowname %in% ids_miss$haplotype4 ~  "4", 
+                              rowname %in% ids_miss$haplotype5 ~  "5", 
+                              rowname %in% ids_miss$haplotype6 ~  "6", 
+                              rowname %in% ids_miss$haplotype7 ~  "7", 
+                              rowname %in% ids_miss$haplotype8 ~  "8", 
+                              rowname %in% ids_miss$haplotype9 ~  "9", 
+                              rowname %in% ids_miss$haplotype10 ~ "10", 
+                              rowname %in% ids_miss$haplotype11 ~ "11", 
+                              rowname %in% ids_miss$haplotype12 ~ "12", 
+                              rowname %in% ids_miss$haplotype13 ~ "13", 
+                              rowname %in% ids_miss$haplotype14 ~ "14", 
+                              rowname %in% ids_miss$haplotype15 ~ "15", 
+                              rowname %in% ids_miss$haplotype16 ~ "16", 
+                              rowname %in% ids_miss$haplotype17 ~ "17", 
+                              rowname %in% ids_miss$haplotype18 ~ "18", 
+                              rowname %in% ids_miss$haplotype19 ~ "19", 
+                              rowname %in% ids_miss$haplotype20 ~ "20", 
+                              rowname %in% ids_miss$haplotype21 ~ "21", 
+                              rowname %in% ids_miss$haplotype22 ~ "22", 
+                              rowname %in% ids_miss$haplotype23 ~ "23", 
+                              rowname %in% ids_miss$haplotype24 ~ "24", 
+                              rowname %in% ids_miss$haplotype25 ~ "25", 
+                              rowname %in% ids_miss$haplotype26 ~ "26",  
+                              rowname %in% ids_miss$haplotype27 ~ "27",  
+                              
+                              ))
+
+# reorder according to pegas label
+relabel_miss <- count(haplos_simple, Haplotype, hap_pegas_indel_rem) %>% 
+  select(-n) %>% 
+  arrange(as.numeric(hap_pegas_indel_rem))
+
+relabel_haps_miss <- as.vector(relabel_miss$Haplotype)
+relabel_haps_miss[relabel_haps_miss == "L"] <- "L_P"
+relabel_haps_miss <- relabel_haps_miss[relabel_haps_miss != "P"]
+
+
+# recall the haplotypes & make the network
+A_haps_miss <- pegas::haplotype(adx_fas_pegas_miss, label=relabel_haps_miss)
+
+A_Net_miss <- pegas::haploNet(A_haps_miss)
+A_Net_miss
+```
+
+
+```{r, eval=T}
+# Create the pie chart labels
+P_miss <- haploFreq(adx_fas_pegas_miss, fac = pop_NP, haplo = A_haps_miss)
+nt.labs_miss <- attr(A_Net_miss, "labels")
+P_miss <- P_miss[nt.labs_miss, ]
+
+setHaploNetOptions(labels.cex = 1,
+                   mutations.cex = 0.005,
+                   show.mutation=1)
+
+plot(A_Net_miss, 
+     size = (log10(attr(A_Net_miss, "freq"))),
+     scale.ratio=1.75, 
+     pie = P_miss, legend = c(-20,-3),
+     show.mutation= 0, 
+     labels=T)
+## manually save plot as svg width = 1400, height = 700
+
+```
+
+Re-coding haplotypes as either "sic" or 5th state resulted in the same number of haplotypes, and recovered all 25 haplotypes. When the indel is excluded by re-coding the region as missing data, 24 haplotypes were recovered and haplotypes L and P were identical. TCS statistical parsimony networks were created for the data, with the large 76bp indel re-coded as i) a single polymorphic site (imitating "sic" re-coding method), ii) multiple polymorphic sites (imitating the 5th state) and iii) complete deletion (imitating missing data). 
+
+
+# Final summary
+
+
+```{r}
+# Import the manually identified haplotypes
+haplos <- fread("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021_addax_haplotypes.csv") %>% 
+  mutate(Samples = WG_ID) %>% 
+  filter(Haplotype != "E" & WG_ID != "MZ474957")
+```
+
+
+```{r, eval = F}
+#~ create pegas objects with relevant haplotypes for different groups
+
+#~ wild
+haplos %>% 
+  filter(Pop_country == "Chad" | Pop_country == "Niger") %>% 
+  select(WG_ID) %>% 
+  mutate(WG_ID = paste0(">", WG_ID)) %>% 
+  write.table("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/ids_wild.txt",
+              row.names=F, quote=F, col.names=F)
+  
+#~ ex situ
+haplos %>% 
+  filter(Pop_country == "AAZ" | Pop_country == "AZA" | Pop_country == "EAD" |
+           Pop_country == "EEP"  | Pop_country == "TUNISIA") %>% 
+  select(WG_ID) %>% 
+  mutate(WG_ID = paste0(">", WG_ID)) %>% 
+  write.table("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/ids_cap.txt",
+              row.names=F, quote=F, col.names=F)
+
+#~ Tunisia
+haplos %>% 
+  filter(Pop_country == "TUNISIA" ) %>% 
+  select(WG_ID) %>% 
+  mutate(WG_ID = paste0(">", WG_ID)) %>% 
+  write.table("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/ids_TUNISIA.txt",
+              row.names=F, quote=F, col.names=F)
+
+#~ EEP
+haplos %>% 
+  filter(Pop_country == "EEP" ) %>% 
+  select(WG_ID) %>% 
+  mutate(WG_ID = paste0(">", WG_ID)) %>% 
+  write.table("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/ids_EEP.txt",
+              row.names=F, quote=F, col.names=F)
+
+#~ AAZ
+haplos %>% 
+  filter(Pop_country == "AAZ" ) %>% 
+  select(WG_ID) %>% 
+  mutate(WG_ID = paste0(">", WG_ID)) %>% 
+  write.table("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/ids_AAZ.txt",
+              row.names=F, quote=F, col.names=F)
+
+#~ AZA
+haplos %>% 
+  filter(Pop_country == "AZA" ) %>% 
+  select(WG_ID) %>% 
+  mutate(WG_ID = paste0(">", WG_ID)) %>% 
+  write.table("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/ids_AZA.txt",
+              row.names=F, quote=F, col.names=F)
+
+#~ EAD
+haplos %>% 
+  filter(Pop_country == "EAD" ) %>% 
+  select(WG_ID) %>% 
+  mutate(WG_ID = paste0(">", WG_ID)) %>% 
+  write.table("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/ids_EAD.txt",
+              row.names=F, quote=F, col.names=F)
+
+#~ HNP
+haplos %>% 
+  filter(Pop_NP == "HNP" ) %>% 
+  select(WG_ID) %>% 
+  mutate(WG_ID = paste0(">", WG_ID)) %>% 
+  write.table("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/ids_HNP.txt",
+              row.names=F, quote=F, col.names=F)
+#~ JNP
+haplos %>% 
+  filter(Pop_NP == "JNP" ) %>% 
+  select(WG_ID) %>% 
+  mutate(WG_ID = paste0(">", WG_ID)) %>% 
+  write.table("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/ids_JNP.txt",
+              row.names=F, quote=F, col.names=F)
+#~ SJNP
+haplos %>% 
+  filter(Pop_NP == "SJNP" ) %>% 
+  select(WG_ID) %>% 
+  mutate(WG_ID = paste0(">", WG_ID)) %>% 
+  write.table("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/ids_SJNP.txt",
+              row.names=F, quote=F, col.names=F)
+#~ ALL
+haplos %>% 
+  select(WG_ID) %>% 
+  mutate(WG_ID = paste0(">", WG_ID)) %>% 
+  write.table("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/ids_ALL.txt",
+              row.names=F, quote=F, col.names=F)
+
+#~ ALL_contemporary
+haplos %>% 
+  filter(!grepl("historic", Pop_country)) %>% 
+  select(WG_ID) %>% 
+  mutate(WG_ID = paste0(">", WG_ID)) %>% 
+  write.table("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/ids_ALL_contemporary.txt",
+              row.names=F, quote=F, col.names=F)
+
+#~ Museum
+haplos %>% 
+  filter(grepl("MZ", WG_ID) & Pop_country != "EEP") %>% 
+  select(WG_ID) %>% 
+  mutate(WG_ID = paste0(">", WG_ID)) %>% 
+  write.table("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/ids_museum.txt",
+              row.names=F, quote=F, col.names=F)
+  
+#~ Museum + Wild
+haplos %>% 
+  filter(grepl("MZ", WG_ID) | Pop_country == "Chad" | Pop_country == "Niger") %>% 
+  filter( Pop_country != "EEP") %>% 
+  select(WG_ID) %>% 
+  mutate(WG_ID = paste0(">", WG_ID)) %>% 
+  write.table("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/ids_museum_wild.txt",
+              row.names=F, quote=F, col.names=F)
+
+
+#~ Niger
+haplos %>% 
+  filter(Pop_country == "Niger") %>% 
+  select(WG_ID) %>% 
+  mutate(WG_ID = paste0(">", WG_ID)) %>% 
+  write.table("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/ids_niger.txt",
+              row.names=F, quote=F, col.names=F)
+  
+#~ Chad
+haplos %>% 
+  filter(Pop_country == "Chad") %>% 
+  select(WG_ID) %>% 
+  mutate(WG_ID = paste0(">", WG_ID)) %>% 
+  write.table("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/ids_chad.txt",
+              row.names=F, quote=F, col.names=F)
+  
+```
+
+```{bash, eval = F}
+#~ subset the fasta files
+pops="
+wild
+cap
+AAZ
+AZA
+EAD
+EEP
+TUNISIA
+ALL
+HNP
+JNP
+SJNP
+ALL_contemporary
+museum
+museum_wild
+niger
+chad"
+
+for i in $pops; 
+do
+grep -A 1 -f 4.analysis/4.mtDNA/Pegas_haplotypes/input_files/ids_${i}.txt 4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A.fasta  > 4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_${i}_temp.fasta;
+
+grep -v "^--" 4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_${i}_temp.fasta > 4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_${i}.fasta
+
+rm 4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_${i}_temp.fasta
+done
+
+```
+
+```{r, eval = T}
+adx_fas_ALL <-ape::read.dna("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_ALL.fasta", format = "fasta")
+
+adx_fas_wild <-ape::read.dna("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_wild.fasta", format = "fasta")
+
+adx_fas_cap <-ape::read.dna("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_cap.fasta", format = "fasta")
+
+adx_fas_AAZ <-ape::read.dna("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_AAZ.fasta", format = "fasta")
+adx_fas_AZA <-ape::read.dna("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_AZA.fasta", format = "fasta")
+adx_fas_EAD <-ape::read.dna("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_EAD.fasta", format = "fasta")
+adx_fas_EEP <-ape::read.dna("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_EEP.fasta", format = "fasta")
+adx_fas_TUNISIA <-ape::read.dna("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_TUNISIA.fasta", format = "fasta")
+adx_fas_HNP <-ape::read.dna("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_HNP.fasta", format = "fasta")
+adx_fas_JNP <-ape::read.dna("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_JNP.fasta", format = "fasta")
+adx_fas_SJNP <-ape::read.dna("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_SJNP.fasta", format = "fasta")
+
+adx_fas_All_cont <-ape::read.dna("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_ALL_contemporary.fasta", format = "fasta")
+
+adx_fas_museum <-ape::read.dna("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_museum.fasta", format = "fasta")
+adx_fas_museum_wild <-ape::read.dna("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_museum_wild.fasta", format = "fasta")
+adx_fas_niger <-ape::read.dna("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_niger.fasta", format = "fasta")
+adx_fas_chad <-ape::read.dna("4.analysis/4.mtDNA/Pegas_haplotypes/input_files/2021.03_ADX_indvSeqs_Indel_A_chad.fasta", format = "fasta")
+
+
+hap_wild <- pegas::haplotype(adx_fas_wild)
+hap_cap <- pegas::haplotype(adx_fas_cap)
+hap_AAZ <- pegas::haplotype(adx_fas_AAZ)
+hap_AZA <- pegas::haplotype(adx_fas_AZA)
+hap_EAD <- pegas::haplotype(adx_fas_EAD)
+hap_EEP <- pegas::haplotype(adx_fas_EEP)
+hap_TUNISIA <- pegas::haplotype(adx_fas_TUNISIA)
+hap_HNP <- pegas::haplotype(adx_fas_HNP)
+hap_JNP <- pegas::haplotype(adx_fas_JNP)
+hap_SJNP <- pegas::haplotype(adx_fas_SJNP)
+hap_ALL <- pegas::haplotype(adx_fas_ALL)
+hap_All_cont <- pegas::haplotype(adx_fas_All_cont)
+
+hap_museum <- pegas::haplotype(adx_fas_museum)
+hap_museum_wild <- pegas::haplotype(adx_fas_museum_wild)
+hap_niger <- pegas::haplotype(adx_fas_niger)
+hap_chad <- pegas::haplotype(adx_fas_chad)
+
+
+
+
+
+
+# nuc_div
+
+summary_haps <- 
+  data.frame(Population = c("All", "All_contemporary", "Wild", "Ex situ", "AAZ", "EAD", "EEP", "SSP", "Tunisia", "HNP", "JNP", "SJNP", "museum", "museum_wild", "niger", "chad"),
+           N_samples = c(dim(adx_fas_ALL)[1],
+                            dim(adx_fas_All_cont)[1],
+                            dim(adx_fas_wild)[1],
+                            dim(adx_fas_cap)[1],
+                            dim(adx_fas_AAZ)[1],
+                            dim(adx_fas_EAD)[1],
+                            dim(adx_fas_EEP)[1],
+                            dim(adx_fas_AZA)[1],
+                            dim(adx_fas_TUNISIA)[1],
+                            dim(adx_fas_HNP)[1],
+                            dim(adx_fas_JNP)[1],
+                            dim(adx_fas_SJNP)[1],
+                            dim(adx_fas_museum)[1],
+                            dim(adx_fas_museum_wild)[1],
+                            dim(adx_fas_niger)[1],
+                            dim(adx_fas_chad)[1]
+                         ),  
+           Number_hapls = c(length(attr(hap_ALL, "index")),
+                            length(attr(hap_All_cont, "index")),
+                            length(attr(hap_wild, "index")),
+                            length(attr(hap_cap, "index")),
+                            length(attr(hap_AAZ, "index")),
+                            length(attr(hap_EAD, "index")),
+                            length(attr(hap_EEP, "index")),
+                            length(attr(hap_AZA, "index")),
+                            length(attr(hap_TUNISIA, "index")),
+                            length(attr(hap_HNP, "index")),
+                            length(attr(hap_JNP, "index")),
+                            length(attr(hap_SJNP, "index")),
+                            length(attr(hap_museum, "index")),
+                            length(attr(hap_museum_wild, "index")),
+                            length(attr(hap_niger, "index")),
+                            length(attr(hap_chad, "index"))
+                            
+                            ),
+           Nuc_div = c(nuc.div(adx_fas_ALL),
+                            nuc.div(adx_fas_All_cont),
+                            nuc.div(adx_fas_wild),
+                            nuc.div(adx_fas_cap),
+                            nuc.div(adx_fas_AAZ),
+                            nuc.div(adx_fas_EAD),
+                            nuc.div(adx_fas_EEP),
+                            nuc.div(adx_fas_AZA),
+                            nuc.div(adx_fas_TUNISIA),
+                            nuc.div(adx_fas_HNP),
+                            nuc.div(adx_fas_JNP),
+                            nuc.div(adx_fas_SJNP),
+                            nuc.div(adx_fas_museum),
+                            nuc.div(adx_fas_museum_wild),
+                            nuc.div(adx_fas_niger),
+                            nuc.div(adx_fas_chad)
+                       ),
+              Nuc_div_var = c(nuc.div(adx_fas_ALL, variance = T)[2],
+                            nuc.div(adx_fas_All_cont, variance = T)[2],
+                            nuc.div(adx_fas_wild, variance = T)[2],
+                            nuc.div(adx_fas_cap, variance = T)[2],
+                            nuc.div(adx_fas_AAZ, variance = T)[2],
+                            nuc.div(adx_fas_EAD, variance = T)[2],
+                            nuc.div(adx_fas_EEP, variance = T)[2],
+                            nuc.div(adx_fas_AZA, variance = T)[2],
+                            nuc.div(adx_fas_TUNISIA, variance = T)[2],
+                            nuc.div(adx_fas_HNP, variance = T)[2],
+                            nuc.div(adx_fas_JNP, variance = T)[2],
+                            nuc.div(adx_fas_SJNP, variance = T)[2],
+                            nuc.div(adx_fas_museum, variance = T)[2],
+                            nuc.div(adx_fas_museum_wild, variance = T)[2],
+                            nuc.div(adx_fas_niger, variance = T)[2],
+                            nuc.div(adx_fas_chad, variance = T)[2]
+                            ),
+           Hap_div = c(hap.div(adx_fas_ALL),
+                            hap.div(adx_fas_All_cont),
+                            hap.div(adx_fas_wild),
+                            hap.div(adx_fas_cap),
+                            hap.div(adx_fas_AAZ),
+                            hap.div(adx_fas_EAD),
+                            hap.div(adx_fas_EEP),
+                            hap.div(adx_fas_AZA),
+                            hap.div(adx_fas_TUNISIA),
+                            hap.div(adx_fas_HNP),
+                            hap.div(adx_fas_JNP),
+                            hap.div(adx_fas_SJNP),
+                            hap.div(adx_fas_museum),
+                            hap.div(adx_fas_museum_wild),
+                            hap.div(adx_fas_niger),
+                            hap.div(adx_fas_chad)
+                                              ),
+            Hap_div_var = c(hap.div(adx_fas_ALL, variance = T)[2],
+                            hap.div(adx_fas_All_cont, variance = T)[2],
+                            hap.div(adx_fas_wild, variance = T)[2],
+                            hap.div(adx_fas_cap, variance = T)[2],
+                            hap.div(adx_fas_AAZ, variance = T)[2],
+                            hap.div(adx_fas_EAD, variance = T)[2],
+                            hap.div(adx_fas_EEP, variance = T)[2],
+                            hap.div(adx_fas_AZA, variance = T)[2],
+                            hap.div(adx_fas_TUNISIA, variance = T)[2],
+                            hap.div(adx_fas_HNP, variance = T)[2],
+                            hap.div(adx_fas_JNP, variance = T)[2],
+                            hap.div(adx_fas_SJNP, variance = T)[2],
+                            hap.div(adx_fas_museum, variance = T)[2],
+                            hap.div(adx_fas_museum_wild, variance = T)[2],
+                            hap.div(adx_fas_niger, variance = T)[2],
+                            hap.div(adx_fas_chad, variance = T)[2]
+                            )
+           ) %>% 
+  mutate(Nuc_div = round(Nuc_div, 4),
+         Hap_div = round(Hap_div, 4),
+         Nuc_div_var = round(Nuc_div_var, 5),
+         Hap_div_var = round(Hap_div_var, 5))
+
+
+
+# summary_haps
+
+
+
+```
+
+
+```{r}
+# Tajima's D
+pops <- c("ALL", "All_cont", "wild", "cap", "AAZ", "EAD", "EEP", "AZA", "TUNISIA", "HNP", "JNP", "SJNP", "museum", "museum_wild", "niger")
+
+df <- data.frame(Pop = as.character(),
+                 D = as.numeric(),
+                 D_pval = as.numeric(), 
+                 D_pval_beta= as.numeric())
+
+
+for(i in seq_along(pops)){
+file_name <- paste0("adx_fas_", pops[i])
+fas_in <- get(file_name)
+d <- pegas::tajima.test(fas_in)
+
+df_temp <- data.frame(Pop = pops[i],
+                     D = d$D,
+                     D_pval = d$Pval.normal,
+                     D_pval_beta = d$Pval.beta)
+
+df <- rbind(df, df_temp)
+}
+
+# df
+
+df <- rbind(df, 
+            data.frame(Pop = "chad",
+                       D = NA,
+                       D_pval = NA,
+                       D_pval_beta = NA))
+```
+
+```{r}
+# R2 - alternative to TajD
+pops <- c("ALL", "All_cont", "wild", "cap", "AAZ", "EAD", "EEP", "AZA", "TUNISIA", "HNP", "JNP", "SJNP", "museum", "museum_wild", "niger", "chad")
+
+dfR2 <- data.frame(Pop = as.character(),
+                 R2 = as.numeric(),
+                 R2_pval = as.numeric())
+
+
+for(i in seq_along(pops)){
+file_name <- paste0("adx_fas_", pops[i])
+fas_in <- get(file_name)
+R2 <- pegas::R2.test(fas_in, plot=F, quiet=T)
+
+df_temp <- data.frame(Pop = pops[i],
+                     R2 = R2$R2,
+                     R2_pval = R2$P.val)
+
+dfR2 <- rbind(dfR2, df_temp)
+}
+
+# dfR2 
+
+
+```
+```{r}
+summary_haps <- cbind(summary_haps, df) %>% 
+  select(-Pop) %>% 
+  mutate(D = round(D, 3),
+         D_pval = round(D_pval, 3), 
+         D_pval_beta = round(D_pval_beta, 3),
+         )
+
+
+summary_haps <- cbind(summary_haps, dfR2) %>% 
+  select(-Pop) %>% 
+  mutate(R2 = round(R2, 3),
+         R2_pval = round(R2_pval, 4))
+
+write.csv(summary_haps,
+            "4.analysis/4.mtDNA/Pegas_haplotypes/data_hap_stats.csv",
+          row.names=F, quote=F)
+```
+
+
+```{r, eval = T}
+summary_haps %>% 
+  mutate(Population = gsub("museum_wild", "Musuem and wild", Population),
+         Population = gsub("niger", "Niger", Population),
+         Population = gsub("chad", "Chad", Population),
+         Population = gsub("All_contemporary", "All contemporary populations", Population),
+         Population = gsub("Ex situ", "All managed populations", Population),
+         Population = gsub("museum", "Museum", Population)
+         ) %>% 
+kable(caption = "Summary statistics for various subsets of populations") 
+```
+
+
+```{r}
+summary_haps %>% 
+  subset(Population %in% c("AAZ", "EAD", "EEP", "SSP", "Tunisia")) %>% 
+  mutate(D_beta_sig = p.adjust(D_pval_beta, method= "bonferroni")) %>% 
+  mutate(R2_sig = p.adjust(R2_pval, method= "bonferroni"))
+
+summary_haps %>% 
+  subset(Population %in% c("HNP", "SJNP", "JNP")) %>% 
+  mutate(D_beta_sig = p.adjust(D_pval_beta, method= "bonferroni")) %>% 
+  mutate(R2_sig = p.adjust(R2_pval, method= "bonferroni"))
+```
+
+
+
+
+
+# References
+
+

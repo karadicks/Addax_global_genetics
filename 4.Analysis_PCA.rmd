@@ -1,0 +1,302 @@
+---
+title: "Addax global genetics - PCA"
+author: "Kara Dicks"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::downcute:
+    self_contained: true
+    toc_depth: 4
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r options, echo=F, message = F, warning = F}
+library(knitr)
+library(rmdformats)
+
+## Global options
+opts_chunk$set(comment=NA, 
+                      prompt=FALSE,
+                      tidy=TRUE,
+                      fig.width=6, 
+                      fig.height=6, 
+                      echo=T,
+                      eval=T, 
+                      warning=FALSE, 
+                      message=F)
+opts_knit$set(width=75)
+
+# Always load
+library(tidyverse)
+library(patchwork)
+library(data.table)
+
+
+# ggplot
+library(ggthemr)
+library(patchwork)
+ggthemr(palette = "pale", layout = "clean", 
+        line_weight = 0.7, text_size = 12, type = "outer")
+library(cowplot)
+library(ggrepel)
+
+
+library(adegenet)
+library(hierfstat)
+library(dartR)
+
+source("scripts/4.export_pca_ggplot.R")
+
+# create a colour palette for use throughout
+
+cols_all <- 
+  data.frame(Pop = c("AAZ",
+"AZA",
+"EAD",
+"EEP",
+"TUNISIA",
+"HNP",
+"JNP",
+"SJNP"),
+colours= c(
+"#977398",
+"#CCC591",
+"#798E87",
+"#C27D38",
+"#306489",
+"#008B8B",
+"#1E90FF",
+"#18186F"
+), 
+rename = c(
+"AAZ",
+"SSP",
+"EAD",
+"EEP",
+"Tunisia",
+"HNP",
+"JNP",
+"SJNP"
+))
+
+ggCols <- cols_all$colours
+names(ggCols) <- cols_all$Pop
+
+ggCols2 <- cols_all$colours
+names(ggCols2) <- cols_all$rename
+ 
+
+# read in population files
+pops <- fread("metadata/ADX_samples_populations_NewIDs.csv") %>% 
+  mutate(INDV = IID)
+```
+
+# All populations
+
+```{r}
+### import for pca
+genL_global <- read.PLINK("4.analysis/1.Input_files/ADX_geno95.raw", parallel=F, quiet=T)
+
+
+pca_global <- glPca(genL_global, nf=10)
+
+ggplot_pca_global <- export_pca(pca_global, genL_global)
+
+ggplot_pca_global <-
+  ggplot_pca_global %>% 
+  mutate(pop = as.character(pop)) %>% 
+  mutate(pop = case_when(pop == "AZA" ~ "SSP",
+                         pop == "TUNISIA" ~ "Tunisia", 
+                         TRUE ~ pop))
+```
+
+```{r, eval = F}
+write.table(ggplot_pca_global, 
+            "4.analysis/2.output_files/7.PCA/pca_global95.txt",
+            row.names = F, quote=F, sep="\t")
+```
+
+
+```{r}
+eig <- export_eig(pca_global)
+
+
+e <- 
+  subset(eig, as.numeric(Pos) <= 30) %>% 
+  ggplot()+
+    geom_bar(aes(Pos, percentage), stat="identity",
+             fill = heat.colors(n=30))+
+    scale_x_continuous(expand=c(0,0))+
+    scale_y_continuous(expand = c(0,0))+
+    xlab("Eigenvalues")+
+    ylab("Percent of variance\nexplained")
+e
+
+```
+```{r, eval=F}
+ggsave2("4.analysis/2.output_files/7.PCA/pca_global_eig_geno95.png",
+        e,
+        width=10, height = 5, units = "cm")
+```
+
+
+```{r}
+
+ggplot_pca_global <- 
+  ggplot_pca_global %>% 
+  rename(INDV = ind_names) %>% 
+  left_join(select(pops, INDV, Pop_country, Pop_NP))
+  
+p <- 
+  ggplot(ggplot_pca_global)+
+  geom_hline(yintercept = 0, colour="grey80")+
+  geom_vline(xintercept = 0, colour="grey80")+
+  geom_point(data = subset(ggplot_pca_global, pop != "Tunisia"),
+             aes(pc1, pc2, colour = factor(pop)), 
+             size = 4, alpha=0.7)+
+  geom_point(data = subset(ggplot_pca_global, pop == "Tunisia"),
+             aes(pc1, pc2, shape = factor(Pop_NP)), 
+             size = 4, alpha=0.7, colour = "#306489")+
+    scale_color_manual(values=ggCols2)+
+  ylab(paste0("PC2 (",eig$percentage[2],"%)")) +
+  xlab(paste0("PC1 (",eig$percentage[1],"%)")) +
+  coord_cartesian(ylim = c(-6, 5))+
+  theme(
+    panel.background = element_rect(fill = "transparent", colour = NA),
+    plot.background = element_rect(fill = "transparent", colour = NA),
+    axis.ticks = element_blank(),
+    axis.text = element_blank(),
+      axis.title.x = element_text(face = "plain"),
+      axis.title.y = element_text(face = "plain"),
+    legend.position = "right") +
+  guides(colour=guide_legend(title="Population"))
+
+q <- 
+  p+
+  stat_ellipse(aes(pc1, pc2, colour = pop),
+               type="t",
+               lty=2, size=1
+               )
+q
+```
+
+```{r}
+e2 <- 
+  e+
+  coord_cartesian(xlim = c(0,20))+
+  theme(axis.title = element_blank(), 
+        panel.background = element_rect(fill = "transparent"), 
+        plot.background = element_rect(fill = "transparent", color = "grey60"))
+
+plot_pca <- 
+  q +
+ inset_element(e2, 0.65, 0.75, 1, 1, align_to = 'full')
+
+plot_pca
+
+```
+
+```{r, eval=F}
+ggsave2("4.analysis/2.output_files/7.PCA/pca_global95_combined.png",
+        plot_pca,
+        width=17, height = 12, units = "cm")
+
+ggsave2("4.analysis/2.output_files/7.PCA/pca_global95_combined.svg",
+        plot_pca,
+        width=17, height = 12, units = "cm")
+```
+
+
+
+
+```{r}
+p1_3 <- 
+  ggplot(ggplot_pca_global)+
+  geom_hline(yintercept = 0, colour="grey80")+
+  geom_vline(xintercept = 0, colour="grey80")+
+  geom_point(data = subset(ggplot_pca_global, pop != "Tunisia"),
+             aes(pc1, pc3, colour = factor(pop)), 
+             size = 4, alpha=0.7)+
+  geom_point(data = subset(ggplot_pca_global, pop == "Tunisia"),
+             aes(pc1, pc3, shape = factor(Pop_NP)), 
+             size = 4, alpha=0.7, colour = "#306489")+
+    scale_color_manual(values=ggCols2)+
+  ylab(paste0("PC3 (",eig$percentage[3],"%)")) +
+  xlab(paste0("PC1 (",eig$percentage[1],"%)")) +
+  coord_cartesian(ylim = c(-6, 5))+
+  theme(
+    panel.background = element_rect(fill = "transparent", colour = NA),
+    plot.background = element_rect(fill = "transparent", colour = NA),
+    axis.ticks = element_blank(),
+    axis.text = element_blank(),
+      axis.title.x = element_text(face = "plain"),
+      axis.title.y = element_text(face = "plain"),
+    legend.position = "none") +
+  guides(colour=guide_legend(title="Population"))
+
+q1_3 <- 
+  p1_3+
+  stat_ellipse(aes(pc1, pc3, colour = pop),
+               type="t",
+               lty=2, size=1
+               )
+q1_3
+```
+
+
+```{r}
+
+
+p2_3 <- 
+  ggplot(ggplot_pca_global)+
+  geom_hline(yintercept = 0, colour="grey80")+
+  geom_vline(xintercept = 0, colour="grey80")+
+  geom_point(data = subset(ggplot_pca_global, pop != "Tunisia"),
+             aes(pc2, pc3, colour = factor(pop)), 
+             size = 4, alpha=0.7)+
+  geom_point(data = subset(ggplot_pca_global, pop == "Tunisia"),
+             aes(pc2, pc3, shape = factor(Pop_NP)), 
+             size = 4, alpha=0.7, colour = "#306489")+
+    scale_color_manual(values=ggCols2)+
+  ylab(paste0("PC3 (",eig$percentage[3],"%)")) +
+  xlab(paste0("PC2 (",eig$percentage[2],"%)")) +
+  coord_cartesian(ylim = c(-6, 5))+
+  theme(
+    panel.background = element_rect(fill = "transparent", colour = NA),
+    plot.background = element_rect(fill = "transparent", colour = NA),
+    axis.ticks = element_blank(),
+    axis.text = element_blank(),
+      axis.title.x = element_text(face = "plain"),
+      axis.title.y = element_text(face = "plain"),
+    legend.position = "none") +
+  guides(colour=guide_legend(title="Population"))
+
+q2_3 <- 
+  p2_3+
+  stat_ellipse(aes(pc2, pc3, colour = pop),
+               type="t",
+               lty=2, size=1
+               )
+q2_3
+```
+```{r}
+
+
+plot_1_2_3 <- q1_3 | q2_3
+
+plot_1_2_3 <- plot_1_2_3 + plot_annotation(tag_levels = "A")
+
+plot_1_2_3
+```
+
+```{r, eval=F}
+ggsave2("4.analysis/2.output_files/7.PCA/pca_global95_1_2_3_combined.png",
+        plot_1_2_3,
+        width=23, height = 12, units = "cm")
+
+ggsave2("4.analysis/2.output_files/7.PCA/pca_global95_1_2_3_combined.svg",
+        plot_1_2_3,
+        width=23, height = 12, units = "cm")
+```
+

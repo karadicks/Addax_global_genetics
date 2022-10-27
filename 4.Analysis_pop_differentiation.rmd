@@ -1,0 +1,503 @@
+---
+title: "Addax global genetics - Pop differentiation"
+author: "Kara Dicks"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::downcute:
+    self_contained: true
+    toc_depth: 4
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r options, echo=F, message = F, warning = F}
+library(knitr)
+library(rmdformats)
+
+## Global options
+opts_chunk$set(comment=NA, 
+                      prompt=FALSE,
+                      tidy=TRUE,
+                      fig.width=6, 
+                      fig.height=6, 
+                      echo=T,
+                      eval=T, 
+                      warning=FALSE, 
+                      message=F)
+opts_knit$set(width=75)
+
+# Always load
+library(tidyverse)
+library(patchwork)
+library(data.table)
+
+
+# ggplot
+library(ggthemr)
+library(patchwork)
+ggthemr(palette = "pale", layout = "clean", 
+        line_weight = 0.7, text_size = 12, type = "outer")
+library(cowplot)
+library(ggrepel)
+
+
+library(adegenet)
+library(hierfstat)
+library(dartR)
+
+# colour palette for use throughout
+
+cols_all <- 
+  data.frame(Pop = c("AAZ",
+"AZA",
+"EAD",
+"EEP",
+"TUNISIA",
+"HNP",
+"JNP",
+"SJNP"),
+colours= c(
+"#977398",
+"#CCC591",
+"#798E87",
+"#C27D38",
+"#306489",
+"#008B8B",
+"#1E90FF",
+"#18186F"
+), 
+rename = c(
+"Al Ain",
+"AZA",
+"Abu Dhabi",
+"EEP",
+"Tunisia",
+"Haddej",
+"Jbil",
+"Senghar-Jabbes"
+))
+
+ggCols <- cols_all$colours
+names(ggCols) <- cols_all$Pop
+
+# read in population files
+pops <- fread("metadata/ADX_samples_populations_NewIDs.csv") %>% 
+  mutate(INDV = IID)
+```
+
+# All populations
+
+```{r}
+#~ Fst
+genL <- read.PLINK("4.analysis/1.Input_files/ADX_geno95.raw", parallel=F, quiet=T) 
+
+pw_fst <- dartR::gl.fst.pop(genL, nboots=1000, percent=95, nclusters=1)
+pw_fst_boot <- pw_fst$Bootstraps[,c(1,2,1003:1006)]
+
+write.table(pw_fst_boot,
+            "4.analysis/2.output_files/8.pop_diff/fst_out.txt",
+            row.names=F, quote=T, sep="\t")
+```
+
+```{r}
+pw_fst_boot <- fread("4.analysis/2.output_files/8.pop_diff/fst_out.txt")
+```
+
+
+```{r}
+get_lower_tri<-function(cormat){
+    cormat[upper.tri(cormat)] <- NA
+    return(cormat)
+}
+
+# Get upper triangle of the correlation matrix
+get_upper_tri <- function(cormat){
+    cormat[lower.tri(cormat)]<- NA
+    return(cormat)
+  }
+ 
+
+df_pw_fst <- 
+  get_lower_tri(pw_fst$Fsts) %>% 
+  reshape2::melt(na.rm=T) %>% 
+  mutate(Var1 = as.character(Var1),
+         Var2 = as.character(Var2)) %>% 
+  mutate(Var1 = case_when(Var1 == "AZA" ~ "SSP",
+                          Var1 == "TUNISIA" ~ "Tunisia",
+                          TRUE ~ Var1),
+         Var2 = case_when(Var2 == "AZA" ~ "SSP",
+                          Var2 == "TUNISIA" ~ "Tunisia",
+                          TRUE ~ Var2))
+
+
+plot_fst_TUN <- 
+  ggplot(df_pw_fst_TUN, 
+         aes(Var1, Var2, fill=value))+
+  geom_tile(color = "white") +
+  geom_text(data = subset(df_pw_fst_TUN, !is.na(value)), aes(label = label3)) +
+  scale_fill_gradient2(low = "blue", high = "skyblue3", mid = "white", 
+   midpoint = 0, 
+   limit = c(0,0.2), 
+   space = "Lab", 
+   name="Fst",
+   na.value = "transparent") +
+  coord_fixed()+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+    hjust = 1),
+    axis.title = element_blank(),
+    legend.position ="right",
+    legend.title = element_blank())
+
+plot_fst <- 
+  df_pw_fst %>% 
+  ggplot(aes(Var1, Var2, fill=value))+
+  geom_tile(color = "white")+
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0, 
+   #limit = c(0,0.5), 
+   space = "Lab", 
+   name="Fst") +
+ theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+    size = 12, hjust = 1))+
+ coord_fixed()
+
+plot_fst
+
+
+
+write.table(pw_fst$Fsts,
+            "4.analysis/2.output_files/8.pop_diff/fst_out.txt",
+            quote=F)
+```
+
+```{r}
+fst_edit <- fread("4.analysis/2.output_files/8.pop_diff/fst_out_edit.txt")
+
+fst <- as.matrix(select(fst_edit, -V1))
+
+rownames(fst) <- fst_edit$V1
+
+df.fst <- 
+  fst %>% 
+  reshape2::melt(na.rm=F) %>%
+  mutate(value2 = format(round(value, 3), nsmall=3),
+         value2 = as.character(value2),
+         label2 = case_when(value2 != "NA" ~ paste0(value2, "*"),
+                            TRUE ~ ""),
+         label3 = ifelse(label2 == "   NA*", "", label2)) 
+
+plot_fst <- 
+  df.fst %>% 
+  reshape2::melt(na.rm=F) %>%
+   ggplot(aes(Var1, Var2, fill=value))+
+  geom_tile(color = "white") +
+  geom_text(data = subset(df.fst, !is.na(value)), aes(label = label3)) +
+  scale_fill_gradient2(low = "blue", high = "skyblue3", mid = "white", 
+   midpoint = 0, 
+   limit = c(0,0.2), 
+   space = "Lab", 
+   name="Fst",
+   na.value = "transparent") +
+ coord_fixed()+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+    hjust = 1),
+    axis.title = element_blank(),
+    legend.position = "right",
+    legend.title = element_blank())
+
+plot_fst
+```
+
+```{r}
+cowplot::ggsave2("4.analysis/2.output_files/8.pop_diff/Plot_fst.png",
+      plot_fst,
+       width=10, height = 10, units = "cm")
+
+```
+
+
+## AMOVA
+
+```{r, eval=F}
+#~ try amova using the package poppr. See https://grunwaldlab.github.io/Population_Genetics_in_R/AMOVA.html 
+library(poppr)
+
+#~ import to genclone format
+genI <- gl2gi(genL)
+genC <- as.genclone(genI)
+
+#~ extract the population column to act as strata
+pops <- genI$pop
+
+strata(genI) <- data.frame(pops)
+
+job::job({p.amova <- poppr.amova(genI, ~pops)})
+
+
+#~ store the amova
+amova.df <- data.frame(p.amova$results)
+amova.df$Source_of_variation <- row.names(amova.df)
+
+p.amova$componentsofcovariance$Source_of_variation <- row.names(amova.df)
+
+
+#~ Calcuating p-values
+job::job({amova.pvalues <- ade4::randtest(p.amova, nrepet = 999)})
+
+amova.pvalues
+
+################################################################
+#~ join the pieces of data to generate publishable table
+
+#~ Main data
+amova.df <- full_join(amova.df,p.amova$componentsofcovariance)
+amova.df <- 
+  amova.df %>% 
+  mutate(Source = factor(c("Among populations", 
+                                          "Between samples within populations",
+                                          "Within samples",
+                                          "Total"))) %>% 
+  
+  select(Source, everything()) %>% 
+  select(-Source_of_variation)
+
+#~ Phi stat
+phi <- 
+  p.amova$statphi %>% 
+  mutate(Source = factor(c("Within samples",
+                                          "Between samples within populations",
+                                          "Among populations"))) 
+
+amova.df <-
+  full_join(amova.df, phi) %>% 
+  select(-Mean.Sq, -Sigma)
+
+#~ pvalues
+
+amova_df_paper <- 
+  data.frame(Source = factor(c("Within samples",
+                                          "Between samples within populations",
+                                          "Among populations")),
+             Obs = amova.pvalues$obs,
+             Std.Obs = amova.pvalues$expvar$Std.Obs,
+             Alter = amova.pvalues$alter,
+             Pvalue = amova.pvalues$adj.pvalue) %>% 
+    full_join(amova.df) %>% 
+    select(Source, Df, Sum.Sq, `%`, Phi, Pvalue)
+```
+
+```{r}
+amova_df_paper %>% 
+  write.table("4.analysis/2.output_files/8.pop_diff/amova_out.txt",
+              row.names=F, quote=T, sep="\t")
+```
+
+# Tunisia only
+
+## Fst
+
+```{r}
+#~ Fst
+genL_TunNP <- read.PLINK("4.analysis/1.Input_files/ADX_geno95_TunNp.raw", parallel=F, quiet=T) 
+
+genL_TUN <- genL_TunNP[genL_TunNP@pop == "HNP" | genL_TunNP@pop == "JNP" | genL_TunNP@pop == "SJNP"]
+
+pw_fst_TUN <- dartR::gl.fst.pop(genL_TUN, nboots=1000, percent=95, nclusters=1)
+
+pw_fst_boot_TUN <- pw_fst_TUN$Bootstraps[,c(1,2,1003:1006)]
+
+write.table(pw_fst_boot_TUN,
+            "4.analysis/2.output_files/8.pop_diff/fst_out_TUN.txt",
+            row.names=F, quote=T, sep="\t")
+```
+
+```{r}
+get_lower_tri<-function(cormat){
+    cormat[upper.tri(cormat)] <- NA
+    return(cormat)
+}
+
+df_pw_fst_TUN <- 
+  get_lower_tri(pw_fst_TUN$Fsts) %>% 
+  reshape2::melt(na.rm=T) 
+
+write.table(df_pw_fst_TUN,
+            "4.analysis/2.output_files/8.pop_diff/fst_out_TUN_out.txt",
+            quote=F, row.names=F)
+```
+
+```{r}
+df_pw_fst_TUN <- fread("4.analysis/2.output_files/8.pop_diff/fst_out_TUN_out.txt") %>% 
+  mutate(Var2 = gsub("HNP", "Haddej", Var2))
+
+#~ df to add in missing parts of tringle
+
+add_df <- data.frame(Var1 = c("Haddej"),
+                     Var2 = c("Haddej", "JNP", "SJNP"),
+                     variable = c("variable"),
+                     value = NA)
+
+df_pw_fst_TUN <- 
+  df_pw_fst_TUN %>% 
+  reshape2::melt(na.rm=F) %>%
+  rbind(add_df) %>% 
+  mutate(value2 = format(round(value, 3), nsmall=3),
+         value2 = as.character(value2),
+         label2 = case_when(value2 != "NA" ~ paste0(value2, "*"),
+                            TRUE ~ ""),
+         label3 = ifelse(label2 == "   NA*", "", label2)) 
+ 
+plot_fst_TUN <- 
+  ggplot(df_pw_fst_TUN, 
+         aes(Var1, Var2, fill=value))+
+  geom_tile(color = "white") +
+  geom_text(data = subset(df_pw_fst_TUN, !is.na(value)), aes(label = label3)) +
+  scale_fill_gradient2(low = "blue", high = "skyblue3", mid = "white", 
+   midpoint = 0, 
+   limit = c(0,0.2), 
+   space = "Lab", 
+   name="Fst",
+   na.value = "transparent") +
+  coord_fixed()+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+    hjust = 1),
+    axis.title = element_blank(),
+    legend.position ="right",
+    legend.title = element_blank())
+
+plot_fst_TUN
+```
+
+```{r}
+cowplot::ggsave2("4.analysis/2.output_files/8.pop_diff/Plot_fst.png",
+      plot_fst,
+       width=10, height = 10, units = "cm")
+
+```
+
+
+
+```{r}
+plot_fst_TUN2 <- 
+  plot_fst_TUN + 
+  theme(legend.position = "none")
+
+plot_FST <- plot_fst | plot_fst_TUN2
+plot_FST <- 
+  plot_FST + plot_annotation(tag_levels = "A") +
+  plot_layout(widths = c(2, 1.25))
+
+plot_FST
+```
+
+```{r}
+cowplot::ggsave2("4.analysis/2.output_files/8.pop_diff/Plot_fst_both.png",
+      plot_FST,
+       width=22, height = 10, units = "cm")
+
+```
+
+Export the Fst tables
+
+```{r}
+
+fst_all <- fread("4.analysis/2.output_files/8.pop_diff/fst_out.txt")
+fst_tun <- fread("4.analysis/2.output_files/8.pop_diff/fst_out_TUN.txt")
+
+fst <- rbind(fst_all, fst_tun) %>% 
+  mutate(Population1 = case_when(Population1 == "AZA" ~ "SSP",
+                                 Population1 == "TUNISIA" ~ "Tunisia",
+                                 TRUE ~ Population1),
+         Population2 = case_when(Population2 == "AZA" ~ "SSP",
+                                 Population2 == "TUNISIA" ~ "Tunisia",
+                                 TRUE ~ Population2),
+         `Lower bound CI limit` = format(round(`Lower bound CI limit`, 3),3),
+         `Upper bound CI limit` = format(round(`Upper bound CI limit`, 3),3),
+        Fst = format(round(Fst, 3),3)
+         )
+
+
+write.csv(fst,
+            "4.analysis/2.output_files/8.pop_diff/data_fst_out.csv",
+          row.names=F)
+```
+
+
+## AMOVA 
+
+```{r, eval=F}
+#~ try amova using the package poppr. See https://grunwaldlab.github.io/Population_Genetics_in_R/AMOVA.html 
+library(poppr)
+
+#~ import to genclone format
+genI_TUN <- gl2gi(genL_TUN)
+
+#~ extract the population column to act as strata
+pops_TUN <- genI_TUN$pop
+
+strata(genI_TUN) <- data.frame(pops_TUN)
+
+job::job({p.amova_TUN <- poppr.amova(genI_TUN, ~pops_TUN)})
+
+
+#~ store the amova
+amova.df_TUN <- data.frame(p.amova_TUN$results)
+amova.df_TUN$Source_of_variation <- row.names(amova.df_TUN)
+
+p.amova_TUN$componentsofcovariance$Source_of_variation <- row.names(amova.df_TUN)
+
+
+#~ Calcuating p-values
+job::job({amova.pvalues_TUN <- ade4::randtest(p.amova_TUN, nrepet = 999)})
+
+amova.pvalues_TUN
+
+################################################################
+#~ join the pieces of data to generate publishable table
+
+#~ Main data
+amova.df_TUN <- full_join(amova.df_TUN,
+                          p.amova_TUN$componentsofcovariance)
+amova.df_TUN <- 
+  amova.df_TUN %>% 
+  mutate(Source = factor(c("Among populations", 
+                                          "Between samples within populations",
+                                          "Within samples",
+                                          "Total"))) %>% 
+  
+  select(Source, everything()) %>% 
+  select(-Source_of_variation)
+
+#~ Phi stat
+phi_TUN <- 
+  p.amova_TUN$statphi %>% 
+  mutate(Source = factor(c("Within samples",
+                                          "Between samples within populations",
+                                          "Among populations"))) 
+
+amova.df_TUN <-
+  full_join(amova.df_TUN, phi_TUN) %>% 
+  select(-Mean.Sq, -Sigma)
+
+#~ pvalues
+
+amova_df_paper_TUN <- 
+  data.frame(Source = factor(c("Within samples",
+                                          "Between samples within populations",
+                                          "Among populations")),
+             Obs = amova.pvalues_TUN$obs,
+             Std.Obs = amova.pvalues_TUN$expvar$Std.Obs,
+             Alter = amova.pvalues_TUN$alter,
+             Pvalue = amova.pvalues_TUN$adj.pvalue) %>% 
+    full_join(amova.df_TUN) %>% 
+    select(Source, Df, Sum.Sq, `%`, Phi, Pvalue)
+```
+
+```{r}
+amova_df_paper_TUN %>% 
+  write.table("4.analysis/2.output_files/8.pop_diff/amova_out_TUN.txt",
+              row.names=F, quote=T, sep="\t")
+```
+
+

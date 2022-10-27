@@ -1,0 +1,703 @@
+---
+title: "Addax global genetics - Admixture"
+author: "Kara Dicks"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::downcute:
+    self_contained: true
+    toc_depth: 4
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console 
+---
+
+
+```{r options, echo=F, message = F, warning = F}
+library(knitr)
+library(rmdformats)
+
+## Global options
+opts_chunk$set(comment=NA, 
+                      prompt=FALSE,
+                      tidy=TRUE,
+                      fig.width=6, 
+                      fig.height=6, 
+                      echo=T,
+                      eval=F, 
+                      warning=FALSE, 
+                      message=F)
+opts_knit$set(width=75)
+
+# Always load
+library(tidyverse)
+library(patchwork)
+library(data.table)
+
+
+# ggplot
+library(ggthemr)
+library(patchwork)
+ggthemr(palette = "pale", layout = "clean", 
+        line_weight = 0.7, text_size = 12, type = "outer")
+library(cowplot)
+library(ggrepel)
+
+
+library(adegenet)
+
+
+source("scripts/export_pca_ggplot.R")
+
+plink2hierf <- function(file){
+  read.PLINK(file, parallel=F, quiet=T) %>% 
+  dartR::gl2gi() %>% 
+  hierfstat::genind2hierfstat()
+}
+
+
+library(pophelper)
+prep_for_clumpp <- function(working_dir){
+  setwd(working_dir)
+  path_to_structure_out <- "./results/"
+  all_files <- list.files(path_to_structure_out, pattern = ".Q")
+  struc_out_paths <- paste0(path_to_structure_out, all_files)
+    slist <- readQ(files=struc_out_paths)
+  clumppExport(qlist=slist, useexe=T)
+}
+
+
+plot_data_tbl <- function(value_k) {
+  k %>% 
+    subset(k==value_k) %>% 
+  group_by(id) %>% 
+  mutate(likely_assignment = pop[which.max(prob)],
+         assingment_prob = max(prob)) %>% 
+  arrange(likely_assignment, desc(assingment_prob)) %>% 
+  ungroup() %>% 
+  mutate(id = forcats::fct_inorder(factor(id)))
+}
+
+
+theme3_7 <- theme(axis.text.x = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(angle = 0, vjust = 0.5),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        panel.spacing =unit(0.1, "lines"),
+        legend.position = "none", 
+        strip.text.x = element_blank())
+
+```
+
+# Relaxed LD dataset
+Using 95% dataset: 1704 SNPs
+
+## All populations
+### Run Admixture
+```{r}
+# edit chromosome names
+
+# create a popmap
+fread("4.analysis/1.Input_files/ADX_geno50_TunNP.map", header=F) %>% 
+  mutate(V1 = gsub("HiC_scaffold_", "", V1)) %>% 
+  write.table("4.analysis/1.Input_files/ADX_geno50_TunNP_admix.map",
+              row.names=F, col.names=F, quote=F, sep="\t")
+
+file.copy("4.analysis/1.Input_files/ADX_geno50_TunNP.ped",
+          "4.analysis/1.Input_files/ADX_geno50_TunNP_admix.ped"
+          )
+
+system("cmd", input=paste0("plink --file 4.analysis/1.Input_files/ADX_geno50_TunNP_admix --chr-set 30 --make-bed -out 4.analysis/1.Input_files/ADX_geno50_TunNP_admix")) # 4010 SNPs  276 ind. 
+
+```
+
+
+```{bash}
+
+cd 4.analysis/6.admixture_standard
+
+admix=~/tools/admixture/admixture
+infile=4.analysis/1.Input_files/ADX_geno50_TunNP_admix.bed
+
+for K in 1 2 3 4 5 6 7 8; \
+do $admix -B --cv=10 $infile $K -j4 | tee log${K}.out; done
+
+grep -h CV *.out > combined_cv_error.txt
+
+mkdir results
+mv *.Q results/.
+
+```
+
+
+### Analyse the output
+
+```{r, fig.width=4, fig.height=4.5, fig.cap="Cross-validation error of admixture analysis (using 200 boostraps)"}
+cv_error <- fread("4.analysis/6.admixture_standard/combined_cv_error.txt",showProgress = FALSE)
+
+cv_error <- 
+    cv_error %>%
+    dplyr::rename(K=V3, cv_error=V4) %>%
+    mutate(K = gsub("K=", "", K)) %>%
+    mutate(K = as.numeric(gsub("[[:punct:]]+", "", K)))
+
+plot_cv_ALL <- 
+  ggplot(cv_error, aes(x=K, y=cv_error)) +
+  geom_point() +
+  geom_line() + 
+  scale_x_continuous(breaks = seq(1,12,1)) +
+  scale_y_continuous(name = "Cross-validation error")
+
+plot_cv_ALL
+```
+
+```{r, eval=F}
+cowplot::ggsave2("4.analysis/6.admixture_standard/Plot_cross_validation.png",
+      plot_cv_ALL,
+       width=8, height = 8, units = "cm")
+
+```
+
+
+
+```{r}
+library(pophelper)
+
+#Read in admixture analysis 
+admix_dat <- lapply(Sys.glob("4.analysis/6.admixture_standard/results/*.Q"), read.table)
+
+#Change the names of columns
+for (j in seq_along(admix_dat))
+{
+  names(admix_dat[[j]]) <- gsub("V", "Cluster", names(admix_dat[[j]]))  
+}
+
+#Change the names of datasets
+number_clusters <- lengths(admix_dat) 
+names(admix_dat) <- paste("K=", number_clusters, sep="")
+
+
+
+admix_dat2 <- as.qlist(admix_dat)
+#Number of clusters used and number of individuals
+tabulateQ(admix_dat2)
+
+#Name  groups
+admixture_ids <- read.table(Sys.glob("4.analysis/1.Input_files/ADX_geno50_TunNP_admix.fam"), h=F)
+
+admixture_ids <- 
+  admixture_ids %>%
+  dplyr::select(V1,V2) %>%
+  dplyr::rename(FID=V1, IID=V2) %>%
+  mutate(Index = seq(1,nrow(.),1))
+
+group_df <- data.frame(Group = admixture_ids$FID)
+```
+
+
+```{r}
+k2_8_plot <- 
+  plotQ(admix_dat2[c("K=2","K=3", "K=4", "K=5", "K=6", "K=7", "K=8")],
+        imgoutput="join",
+        exportplot = FALSE, 
+        returnplot = TRUE, basesize=20, 
+        splab = c("K=2","K=3", "K=4", "K=5", "K=6", "K=7", "K=8"),
+        showlegend = TRUE, legendpos = "right", legendkeysize = 5, legendtextsize = 12,
+        showyaxis=T,showticks=T,panelspacer=0.4, indlabsize=14,  selgrp="Group",
+        grplab=group_df, grplabsize=6,linesize=0.5,pointsize=3,ordergrp=TRUE, 
+        sharedindlab=F)
+
+
+plot_k2_k8 <- cowplot::plot_grid(k2_8_plot$plot[[1]])
+
+plot_k2_k8
+```
+
+```{r, eval=F}
+cowplot::ggsave2("4.analysis/6.admixture_standard/Plot_k2_k8.png",
+      plot_k2_k8,
+       width=40, height = 30, units = "cm")
+
+```
+
+## Excluding Tunisia
+
+### Run Admixture
+```{r}
+#~ file to exclude the Tunisian individuals
+write.table(c("HNP", "JNP", "SJNP"),
+            "4.analysis/1.Input_files/Plink_excl_Tunisia.txt",
+            row.names = F, col.names=F, quote=F)
+
+
+#~ Use the binary files from the full admixture run
+system("cmd", input=paste0("plink --bfile 4.analysis/1.Input_files/ADX_geno50_TunNP_admix --chr-set 30 --remove-fam 4.analysis/1.Input_files/Plink_excl_Tunisia.txt --make-bed -out 4.analysis/1.Input_files/ADX_geno50_exclTUN_admix"))
+
+
+```
+
+```{bash}
+
+cd 4.analysis/6.1.admixture_excl_Tun
+
+admix=~/tools/admixture/admixture
+infile=4.analysis/1.Input_files/ADX_geno50_exclTUN_admix.bed
+
+# test
+$admix -B $infile 2 -j4 --cv=10
+
+for K in 1 2 3 4 5 6 7 8; \
+do $admix -B --cv=10 $infile $K -j4 | tee log${K}.out; done
+
+grep -h CV *.out > combined_cv_error.txt
+
+mkdir results
+mv *.Q results/.
+
+```
+
+
+### Analyse the output
+
+```{r, fig.width=4, fig.height=4.5, fig.cap="Cross-validation error of admixture analysis (using 200 boostraps)"}
+cv_error <- fread("4.analysis/6.1.admixture_excl_Tun/combined_cv_error.txt",showProgress = FALSE)
+
+cv_error <- 
+    cv_error %>%
+    dplyr::rename(K=V3, cv_error=V4) %>%
+    mutate(K = gsub("K=", "", K)) %>%
+    mutate(K = as.numeric(gsub("[[:punct:]]+", "", K)))
+
+plot_cv_exTUN <- 
+  ggplot(cv_error, aes(x=K, y=cv_error)) +
+  geom_point() +
+  geom_line() + 
+  scale_x_continuous(breaks = seq(1,12,1)) +
+  scale_y_continuous(name = "Cross-validation error")
+
+plot_cv_exTUN
+```
+
+```{r, eval=F}
+cowplot::ggsave2("4.analysis/6.1.admixture_excl_Tun/Plot_cross_validation.png",
+      plot_cv_exTUN,
+       width=8, height = 8, units = "cm")
+
+```
+
+```{r}
+library(pophelper)
+
+#Read in admixture analysis 
+admix_dat <- lapply(Sys.glob("4.analysis/6.1.admixture_excl_Tun/results/*.Q"), read.table)
+
+#Change the names of columns
+for (j in seq_along(admix_dat))
+{
+  names(admix_dat[[j]]) <- gsub("V", "Cluster", names(admix_dat[[j]]))  
+}
+
+#Change the names of datasets
+number_clusters <- lengths(admix_dat) 
+names(admix_dat) <- paste("K=", number_clusters, sep="")
+
+
+
+admix_dat2 <- as.qlist(admix_dat)
+#Number of clusters used and number of individuals
+tabulateQ(admix_dat2)
+
+#Name breed groups
+admixture_ids <- read.table(Sys.glob("4.analysis/1.Input_files/ADX_geno50_exclTUN_admix.fam"), h=F)
+
+admixture_ids <- 
+  admixture_ids %>%
+  dplyr::select(V1,V2) %>%
+  dplyr::rename(FID=V1, IID=V2) %>%
+  mutate(Index = seq(1,nrow(.),1))
+
+group_df <- data.frame(Group = admixture_ids$FID)
+```
+
+
+```{r}
+k2_8_plot <- 
+  plotQ(admix_dat2[c("K=2","K=3", "K=4", "K=5", "K=6", "K=7")],
+        imgoutput="join",
+        exportplot = FALSE, 
+        returnplot = TRUE, quiet=T,basesize=20, 
+        splab = c("K=2","K=3", "K=4", "K=5", "K=6", "K=7"),
+        showlegend = TRUE, legendpos = "right", legendkeysize = 5, legendtextsize = 12,
+        showyaxis=T,showticks=T,panelspacer=0.4, indlabsize=14,  selgrp="Group",
+        grplab=group_df, grplabsize=6,linesize=0.5,pointsize=3,ordergrp=TRUE, 
+        sharedindlab=F)
+
+
+plot_k2_k8_exTUN <- cowplot::plot_grid(k2_8_plot$plot[[1]])
+
+plot_k2_k8_exTUN
+```
+
+```{r, eval=F}
+cowplot::ggsave2("4.analysis/6.1.admixture_excl_Tun/Plot_k2_k8.png",
+      plot_k2_k8,
+       width=40, height = 30, units = "cm")
+
+```
+
+
+
+
+# Stringent LD dataset 
+
+Using 95% genotyping rate data set: 774 SNPs
+
+## All populations
+### Run Admixture
+
+
+```{bash}
+conda activate SNP_QC
+plink --file  4.analysis/1.Input_files/ADX_geno95_TunNP --aec --indep 50 5 1.25 --out              4.analysis/1.Input_files/ADX_geno95_TunNP_LDprune
+
+
+plink --file  4.analysis/1.Input_files/ADX_geno95_TunNP --aec --extract 4.analysis/1.Input_files/ADX_geno95_TunNP_LDprune.prune.in  --recode --out              4.analysis/1.Input_files/ADX_geno95_TunNP_LDprune # 774 SNPs
+
+plink --file  4.analysis/1.Input_files/ADX_geno95_TunNP_LDprune --aec --missing --make-bed --out              4.analysis/1.Input_files/ADX_geno95_TunNP_LDprune
+
+conda deactivate
+```
+
+
+
+```{r}
+# edit chromosome names
+
+# create a popmap
+fread("4.analysis/1.Input_files/ADX_geno95_TunNP_LDprune.map", header=F) %>% 
+  mutate(V1 = gsub("HiC_scaffold_", "", V1)) %>% 
+  write.table("4.analysis/1.Input_files/ADX_geno95_TunNP_LDprune.map",
+              row.names=F, col.names=F, quote=F, sep="\t")
+```
+
+```{bash}
+conda activate SNP_QC
+
+plink --file 4.analysis/1.Input_files/ADX_geno95_TunNP_LDprune --chr-set 30 --missing --make-bed -out 4.analysis/1.Input_files/ADX_geno95_TunNP_LDprune
+ ## 774 SNPs
+```
+
+
+```{r}
+fread("4.analysis/1.Input_files/ADX_geno95_TunNP_LDprune.imiss") %>% 
+  ggplot()+
+  geom_histogram(aes(F_MISS))+
+  facet_wrap(~FID, scales="free_y")
+```
+
+```{bash}
+conda activate admixture 
+
+mkdir 4.analysis/6.2.admixture_LDprune95
+
+cd 4.analysis/6.2.admixture_LDprune95
+
+infile=../1.Input_files/ADX_geno95_TunNP_LDprune.bed
+
+for K in 1 2 3 4 5 6 7 8
+do 
+admixture -B --cv=10 $infile $K -j4 | tee log${K}.out &
+done
+
+grep -h CV *.out > combined_cv_error.txt
+
+mkdir results
+mv *.Q results/.
+
+cd ../..
+```
+
+
+
+### Analyse the output
+
+```{r, fig.width=4, fig.height=4.5, fig.cap="Cross-validation error of admixture analysis (using 200 boostraps)"}
+cv_error <- fread("4.analysis/6.2.admixture_LDprune95/combined_cv_error.txt",showProgress = FALSE)
+
+cv_error <- 
+    cv_error %>%
+    dplyr::rename(K=V3, cv_error=V4) %>%
+    mutate(K = gsub("K=", "", K)) %>%
+    mutate(K = as.numeric(gsub("[[:punct:]]+", "", K)))
+
+plot_cv <- 
+  ggplot(cv_error, aes(x=K, y=cv_error)) +
+  geom_point() +
+  geom_line() + 
+  scale_x_continuous(breaks = seq(1,12,1)) +
+  scale_y_continuous(name = "Cross-validation error")
+
+plot_cv
+```
+
+```{r, eval=F}
+cowplot::ggsave2("4.analysis/6.2.admixture_LDprune95/Plot_cross_validation.png",
+      plot_cv,
+       width=8, height = 8, units = "cm")
+
+```
+
+
+```{r}
+library(pophelper)
+
+sfiles <- list.files("4.analysis/6.2.admixture_LDprune95/results/", 
+                     full.names = T, pattern=".Q")
+slist <- readQ(files = sfiles)
+
+tr1 <- tabulateQ(qlist=slist)
+sr1 <- summariseQ(tr1)
+
+#Change the names of datasets
+number_clusters <- lengths(slist) 
+names(slist) <- paste("K=", number_clusters, sep="")
+
+
+## read in pop info
+pops_all <- fread("metadata/ADX_samples_populations_NewIDs.csv") %>% 
+  select(IID, Pop_country, Pop_NP) %>% 
+  mutate(Pop_country = gsub("AZA", "SSP", Pop_country),
+         Pop_NP = gsub("AZA", "SSP", Pop_NP),
+         Pop_country = gsub("TUNISIA", "Tunisia", Pop_country))
+
+pops <- fread("4.analysis/1.Input_files/ADX_geno95_TunNP_LDprune.ped") %>% 
+  select(V2) %>% 
+  rename(IID = V2) 
+
+pops <- left_join(pops, pops_all)
+
+```
+```{r}
+slist1 <- alignK(slist)
+colours <- c("#006E82","#FA78FA","#8214A0","#00A0FA","#005AC8","#14D2DC","#AA0A3C","#FA7850","#0AB45A","#F0F032","#A0FA82","#FAE6BE")
+
+
+k2_6_plotA <- 
+plotQ(slist1[c("K=2","K=3", "K=4", "K=5", "K=6")],
+       imgoutput="join",
+        exportplot = FALSE, 
+        returnplot = TRUE,
+        basesize=16, 
+        clustercol=colours,
+        splab = c("K=2","K=3", "K=4", "K=5", "K=6"),
+        showlegend = TRUE, legendpos = "right", 
+        legendkeysize = 8, legendtextsize = 12,
+        showdiv=T, 
+        divsize = 0.5,
+        divcol="black", divtype = 1,
+        divgrp = "Pop_NP",
+        showyaxis=F,
+        showticks=F,
+        grplab=pops,
+        selgrp="Pop_country",
+        subsetgrp = c("AAZ", "EAD", "SSP", "EEP", "Tunisia"),
+        grplabheight = 2,
+        ordergrp=T,
+        grplabsize=6,
+        showindlab=FALSE,
+        )
+
+plot_k2_k6A <- cowplot::plot_grid(k2_6_plotA$plot[[1]])
+
+plot_k2_k6A
+```
+
+```{r, eval=F}
+cowplot::ggsave2("4.analysis/6.2.admixture_LDprune95/Plot_k2_6a.png",
+      plot_k2_k6A,
+       width=30, height = 15, units = "cm")
+
+
+cowplot::ggsave2("4.analysis/6.2.admixture_LDprune95/Plot_k2_6a.svg",
+      plot_k2_k6A,
+       width=30, height = 15, units = "cm")
+```
+
+
+
+
+## Excluding Tunisia 
+### Run Admixture
+
+```{bash}
+conda activate SNP_QC
+
+mkdir 4.analysis/6.2.admixture_LDprune95_exTUN
+
+plink --file 4.analysis/1.Input_files/ADX_geno95_TunNP_LDprune --chr-set 30 --remove-fam 4.analysis/1.Input_files/Plink_excl_Tunisia.txt --recode -out 4.analysis/6.2.admixture_LDprune95_exTUN/ADX_geno95_TunNP_LDprune_exclTUN
+
+plink --file 4.analysis/6.2.admixture_LDprune95_exTUN/ADX_geno95_TunNP_LDprune_exclTUN --chr-set 30 --maf 0.0001 --recode -out 4.analysis/6.2.admixture_LDprune95_exTUN/ADX_geno95_TunNP_LDprune_exclTUN # 739 SNPs
+
+plink --file  4.analysis/6.2.admixture_LDprune95_exTUN/ADX_geno95_TunNP_LDprune_exclTUN --chr-set 30 --missing --make-bed --out 4.analysis/6.2.admixture_LDprune95_exTUN/ADX_geno95_TunNP_LDprune_exclTUN
+
+
+```
+
+
+
+```{r}
+# edit chromosome names
+
+# create a popmap
+fread("4.analysis/6.2.admixture_LDprune95_exTUN/ADX_geno95_TunNP_LDprune_exclTUN_LDprune.map", header=F) %>% 
+  mutate(V1 = gsub("HiC_scaffold_", "", V1)) %>% 
+  write.table("4.analysis/6.2.admixture_LDprune95_exTUN/ADX_geno95_TunNP_LDprune_exclTUN.map",
+              row.names=F, col.names=F, quote=F, sep="\t")
+```
+
+```{bash}
+
+
+plink --file 4.analysis/6.2.admixture_LDprune95_exTUN/ADX_geno95_TunNP_LDprune_exclTUN --chr-set 30 --missing --make-bed -out 4.analysis/6.2.admixture_LDprune95_exTUN/ADX_geno95_TunNP_LDprune_exclTUN
+ 
+ ## 739 SNPs
+ conda deactivate
+```
+
+
+```{r}
+fread("4.analysis/6.2.admixture_LDprune95_exTUN/ADX_geno95_TunNP_LDprune_exclTUN.imiss") %>% 
+  ggplot()+
+  geom_histogram(aes(F_MISS))+
+  facet_wrap(~FID, scales="free_y")
+```
+
+```{bash}
+conda activate admixture 
+
+cd 4.analysis/6.2.admixture_LDprune95_exTUN
+
+infile=ADX_geno95_TunNP_LDprune_exclTUN.bed
+
+for K in 1 2 3 4 5 6 7 8
+do 
+admixture -B --cv=10 $infile $K -j4 | tee log${K}.out &
+done
+
+grep -h CV *.out > combined_cv_error.txt
+
+mkdir results
+mv *.Q results/.
+
+cd ../..
+```
+
+
+
+### Analyse the output
+
+```{r, fig.width=4, fig.height=4.5, fig.cap="Cross-validation error of admixture analysis (using 200 boostraps)"}
+cv_error <- fread("4.analysis/6.2.admixture_LDprune95_exTUN/combined_cv_error.txt",showProgress = FALSE)
+
+cv_error <- 
+    cv_error %>%
+    dplyr::rename(K=V3, cv_error=V4) %>%
+    mutate(K = gsub("K=", "", K)) %>%
+    mutate(K = as.numeric(gsub("[[:punct:]]+", "", K)))
+
+plot_cv <- 
+  ggplot(cv_error, aes(x=K, y=cv_error)) +
+  geom_point() +
+  geom_line() + 
+  scale_x_continuous(breaks = seq(1,12,1)) +
+  scale_y_continuous(name = "Cross-validation error")
+
+plot_cv
+```
+
+```{r, eval=F}
+cowplot::ggsave2("4.analysis/6.2.admixture_LDprune95_exTUN/Plot_cross_validation.png",
+      plot_cv,
+       width=8, height = 8, units = "cm")
+
+```
+
+
+```{r}
+library(pophelper)
+
+sfiles <- list.files("4.analysis/6.2.admixture_LDprune95_exTUN/results/", 
+                     full.names = T, pattern=".Q")
+slist <- readQ(files = sfiles)
+
+tr1 <- tabulateQ(qlist=slist)
+sr1 <- summariseQ(tr1)
+
+#Change the names of datasets
+number_clusters <- lengths(slist) 
+names(slist) <- paste("K=", number_clusters, sep="")
+
+
+## read in pop info
+pops_all <- fread("metadata/ADX_samples_populations_NewIDs.csv") %>% 
+  select(IID, Pop_country, Pop_NP) %>% 
+  mutate(Pop_country = gsub("AZA", "SSP", Pop_country),
+         Pop_NP = gsub("AZA", "SSP", Pop_NP),
+         Pop_country = gsub("TUNISIA", "Tunisia", Pop_country))
+
+pops <- fread("4.analysis/1.Input_files/ADX_geno95_TunNP_LDprune_exclTUN.ped") %>% 
+  select(V2) %>% 
+  rename(IID = V2) 
+
+pops <- left_join(pops, pops_all)
+
+```
+```{r}
+slist1 <- alignK(slist)
+colours <- c("#006E82","#FA78FA","#8214A0","#00A0FA","#005AC8","#14D2DC","#AA0A3C","#FA7850","#0AB45A","#F0F032","#A0FA82","#FAE6BE")
+
+
+k2_6_plotA <- 
+plotQ(slist1[c("K=2","K=3", "K=4", "K=5", "K=6")],
+       imgoutput="join",
+        exportplot = FALSE, 
+        returnplot = TRUE,
+        basesize=16, 
+        clustercol=colours,
+        splab = c("K=2","K=3", "K=4", "K=5", "K=6"),
+        showlegend = TRUE, legendpos = "right", 
+        legendkeysize = 8, legendtextsize = 12,
+        showdiv=T, 
+        divsize = 0.5,
+        divcol="black", divtype = 1,
+        divgrp = "Pop_NP",
+        showyaxis=F,
+        showticks=F,
+        grplab=pops,
+        selgrp="Pop_country",
+        subsetgrp = c("AAZ", "EAD", "SSP", "EEP", "Tunisia"),
+        grplabheight = 2,
+        ordergrp=T,
+        grplabsize=6,
+        showindlab=FALSE
+        )
+
+plot_k2_k6A <- cowplot::plot_grid(k2_6_plotA$plot[[1]])
+
+plot_k2_k6A
+```
+
+```{r, eval=F}
+cowplot::ggsave2("4.analysis/6.2.admixture_LDprune95_exTUN/Plot_k2_6a.png",
+      plot_k2_k6A,
+       width=30, height = 15, units = "cm")
+
+
+cowplot::ggsave2("4.analysis/6.2.admixture_LDprune95_exTUN/Plot_k2_6a.svg",
+      plot_k2_k6A,
+       width=30, height = 15, units = "cm")
+```
+
+
+

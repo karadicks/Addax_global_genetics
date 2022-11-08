@@ -111,6 +111,9 @@ cp ${in}.recode.strct_in 4.analysis/3.structure_1704/1.input_files/.
 
 
 ```{r, eval = F}
+
+# This code is adapted from Emily Humble's code at https://github.com/elhumble/seal_rad_2018
+
 # Create the job matrix
 #~~ construct job matrix and write to job file
 options(scipen=999)

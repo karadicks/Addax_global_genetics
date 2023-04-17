@@ -1,4 +1,7 @@
 # Addax global genetics
-This repository ontains the scripts and pipelines used to analyse mtDNA and ddRAD data for addax. The results of these analyses and links to the raw data are contained within our bioRxiv preprint: 
+This repository contains the scripts and pipelines used to analyse mtDNA and ddRAD data for addax. The results of these analyses and links to the raw data are contained within our open access paper: 
 
-Dicks et al. 2022. Genetic diversity in global populations of the Critically Endangered addax (Addax nasomaculatus) and its implications for conservation. bioRxiv. https://www.biorxiv.org/content/10.1101/2022.07.07.499131v1 
+[Dicks et al. 2023](https://doi.org/10.1111/eva.13515). Genetic diversity in global populations of the Critically Endangered addax (Addax nasomaculatus) and its implications for conservation. Evolutionary Applications. 16(1):111-25. https://doi.org/10.1111/eva.13515
+
+![image](https://user-images.githubusercontent.com/20296404/232451378-1451c41d-4cb1-496a-bf24-843d7e363b93.png)
+
